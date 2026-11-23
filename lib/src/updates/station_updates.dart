@@ -14,14 +14,11 @@ import 'target_architecture.dart';
 
 final class StationUpdates {
   StationUpdates._(this.version, this._http)
-    : usesFixture =
-          version.platform == 'web' ||
-          (!useLiveAccountService && xyCarReleaseOrigin.isEmpty);
+    : usesFixture = !useLiveAccountService && xyCarReleaseOrigin.isEmpty;
 
   final InstalledAppVersion version;
   final http.Client _http;
   final bool usesFixture;
-  bool get canVerifySample => usesFixture && version.platform != 'web';
   static final _sample = utf8.encode('XY-CAR update verification sample');
   late final repository = UpdateRepository(
     installedVersion: version,
@@ -29,14 +26,12 @@ final class StationUpdates {
   );
 
   static StationUpdates? forPlatform(String name, int build) {
-    if (kIsWeb && useLiveAccountService) return null;
-    final platform = kIsWeb
-        ? 'web'
-        : switch (defaultTargetPlatform) {
-            TargetPlatform.android => 'android',
-            TargetPlatform.windows => 'windows',
-            _ => null,
-          };
+    if (kIsWeb) return null;
+    final platform = switch (defaultTargetPlatform) {
+      TargetPlatform.android => 'android',
+      TargetPlatform.windows => 'windows',
+      _ => null,
+    };
     if (platform == null) return null;
     return StationUpdates._(
       InstalledAppVersion(
@@ -44,11 +39,7 @@ final class StationUpdates {
         versionName: name,
         buildNumber: build,
         platform: platform,
-        architecture: switch (platform) {
-          'android' => androidArchitecture,
-          'windows' => 'x64',
-          _ => 'any',
-        },
+        architecture: platform == 'android' ? androidArchitecture : 'x64',
       ),
       createServiceHttpClient(),
     );
@@ -65,13 +56,8 @@ final class StationUpdates {
         minimumSupportedBuild: 0,
         forceUpdate: false,
         releaseNotes: {
-          'zh': [if (canVerifySample) '本地校验样本，不会启动安装器。' else 'Web 预览使用本地更新样本。'],
-          'en': [
-            if (canVerifySample)
-              'Local verification sample. No installer is launched.'
-            else
-              'The web preview uses a local update sample.',
-          ],
+          'zh': ['本地校验样本，不会启动安装器。'],
+          'en': ['Local verification sample. No installer is launched.'],
         },
         artifacts: [
           UpdateArtifact(
@@ -126,7 +112,7 @@ final class StationUpdates {
 
   Future<void> verifySample(UpdateCandidate candidate) async {
     final artifact = candidate.artifact;
-    if (!canVerifySample ||
+    if (!usesFixture ||
         artifact.size != _sample.length ||
         artifact.sha256 != sha256.convert(_sample).toString()) {
       throw const FormatException('Invalid verification sample.');

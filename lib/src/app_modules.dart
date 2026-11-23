@@ -34,20 +34,16 @@ final class StationModules {
     this.lifecycle,
     this._preferences,
     this._updateSource,
-    this.version,
-    this.build,
   );
 
   final SettingsModule settings;
   final IdentityController identity;
   final StationIdentityGateway gateway;
   final StationDataClient data;
-  final UpdateModule? updates;
+  final UpdateModule updates;
   final ModuleLifecycle lifecycle;
   final SharedPreferences _preferences;
   final StationUpdates? _updateSource;
-  final String version;
-  final int build;
   Future<void>? _closing;
 
   static Future<StationModules> start({
@@ -89,17 +85,28 @@ final class StationModules {
     );
     final build = int.tryParse(installed.buildNumber) ?? 1;
     final source = StationUpdates.forPlatform(installed.version, build);
+    void navigateToUpdate(BuildContext context) =>
+        Navigator.of(context).pushNamed(updateRoute);
+
     final updates = source == null
-        ? null
+        ? UpdateModule.versionOnly(
+            installedVersion: InstalledAppVersion(
+              appId: xyCarReleaseId,
+              versionName: installed.version,
+              buildNumber: build,
+              platform: kIsWeb ? 'web' : defaultTargetPlatform.name,
+              architecture: 'any',
+            ),
+            navigateToUpdate: navigateToUpdate,
+          )
         : UpdateModule(
             repository: source.repository,
-            openUpdate: source.canVerifySample ? source.verifySample : null,
-            navigateToUpdate: (context) =>
-                Navigator.of(context).pushNamed(updateRoute),
+            openUpdate: source.usesFixture ? source.verifySample : null,
+            navigateToUpdate: navigateToUpdate,
           );
 
     try {
-      final lifecycle = await ModuleLifecycle.start([settings, ?updates]);
+      final lifecycle = await ModuleLifecycle.start([settings, updates]);
       return StationModules._(
         settings,
         identity,
@@ -109,8 +116,6 @@ final class StationModules {
         lifecycle,
         storage,
         source,
-        installed.version,
-        build,
       );
     } catch (_) {
       identity.dispose();

@@ -21,6 +21,6 @@ flutter test
 - Web 使用同源 `/api/`，网关模板位于 `packaging/docker/`。Docker 发布入口为 `scripts/build_web_docker.ps1`，需要配套 API 工程和 Python 环境。
 - 在能访问本地 Foundation 源码的构建机上生成并验证 `linux/amd64` Web 镜像。发布 GHCR 时，使用有推送权限的 Docker 登录来上传镜像，并更新 `packaging/docker/docker-compose.ghcr.yml` 中的镜像摘要。
 - Web 镜像将 CanvasKit、字体、图片等静态资源、应用代码分成独立镜像层。NAS 首次由 GHCR 拉取完整镜像，后续按摘要复用本机已有层。
-- 原生端账号服务可通过 `APP_SERVICE_ORIGIN` 或应用设置指定。发布清单沿用 `xy_car_app`，可通过 `XY_CAR_RELEASE_ORIGIN` 单独设定来源。Android 和 Windows 的正式安装包下载及安装交接仍待接入。Web 正式版的「关于」显示版本。
+- 原生端账号服务可通过 `APP_SERVICE_ORIGIN` 或应用设置指定。发布清单沿用 `xy_car_app`，可通过 `XY_CAR_RELEASE_ORIGIN` 单独设定来源。Android 和 Windows 的正式安装包下载及安装交接仍待接入。Web 的「软件更新」页显示当前版本，检查更新不可用。
 
 许可证为 GPL-3.0-or-later，见 [LICENSE](LICENSE)。

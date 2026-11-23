@@ -65,7 +65,7 @@ class _XYCarAppState extends State<XYCarApp> {
         locale: Locale(snapshot.requireData[languagePreference]!),
         localizationsDelegates: [
           ...GlobalMaterialLocalizations.delegates,
-          ...?modules.updates?.localizationsDelegates,
+          ...modules.updates.localizationsDelegates,
         ],
         supportedLocales: const [Locale('zh'), Locale('en')],
         theme: createAppTheme(seedColor: _cyan, brightness: Brightness.dark),
@@ -98,45 +98,28 @@ class _XYCarAppState extends State<XYCarApp> {
                 ? modules.configureAccount
                 : null,
           ),
-          if (modules.updates case final updates?)
-            updateRoute: (context) => _updateScreen(context, updates),
+          updateRoute: (context) => _updateScreen(context, modules.updates),
         },
       ),
     );
   }
 }
 
-Widget _updateScreen(
-  BuildContext context,
-  UpdateModule updates, {
-  bool about = false,
-}) {
-  const appName = 'XY-CAR';
-  return Scaffold(
-    appBar: AppBar(
-      title: Text(
-        about
-            ? localized(context, '关于', 'About')
-            : UpdateLocalizations.of(context).title,
+Widget _updateScreen(BuildContext context, UpdateModule updates) => Scaffold(
+  appBar: AppBar(title: Text(UpdateLocalizations.of(context).title)),
+  body: Align(
+    alignment: Alignment.topCenter,
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 660),
+      child: updates.buildPage(
+        context,
+        appName: 'XY-CAR',
+        appIcon: const _StationIcon(_StationGlyph.activity, size: 52),
+        subtitle: localized(context, '地面站控制终端', 'Ground station'),
       ),
-      actions: [
-        if (about)
-          IconButton(
-            tooltip: MaterialLocalizations.of(context).viewLicensesButtonLabel,
-            onPressed: () =>
-                showLicensePage(context: context, applicationName: appName),
-            icon: const _StationIcon(_StationGlyph.fileText),
-          ),
-      ],
     ),
-    body: updates.buildPage(
-      context,
-      appName: appName,
-      appIcon: const _StationIcon(_StationGlyph.activity, size: 52),
-      subtitle: localized(context, '地面站控制终端', 'Ground station'),
-    ),
-  );
-}
+  ),
+);
 
 enum _Section { map, camera, data, logs }
 
@@ -350,35 +333,7 @@ class _StationState extends State<_Station> {
                           Navigator.of(context).pushNamed(accountRoute),
                     ),
                   ),
-                  ...?_modules.updates?.settingsEntries,
-                  SettingsEntry(
-                    id: 'station.about',
-                    builder: (context) => ListTile(
-                      leading: const _StationIcon(_StationGlyph.info),
-                      title: Text(localized(context, '关于', 'About')),
-                      subtitle: Text(
-                        'XY-CAR · ${_modules.version} (${_modules.build})',
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        if (_modules.updates case final updates?) {
-                          Navigator.of(context).push<void>(
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  _updateScreen(context, updates, about: true),
-                            ),
-                          );
-                        } else {
-                          showAboutDialog(
-                            context: context,
-                            applicationName: 'XY-CAR',
-                            applicationVersion:
-                                '${_modules.version} (${_modules.build})',
-                          );
-                        }
-                      },
-                    ),
-                  ),
+                  ..._modules.updates.settingsEntries,
                 ],
               ),
             ],

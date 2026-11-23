@@ -1,3 +1,4 @@
+import 'package:app_update/app_update.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -20,6 +21,7 @@ void main() {
       await tap(tester, find.byTooltip('系统设置'));
       expect(find.text('账号'), findsOneWidget);
       expect(find.text('导入与导出'), findsNothing);
+      expect(find.text('关于'), findsNothing);
       final settingsIcons = tester
           .widgetList<SvgPicture>(find.byType(SvgPicture))
           .map((icon) => icon.bytesLoader)
@@ -140,35 +142,55 @@ void main() {
       await tap(tester, entry);
       await tap(tester, find.text('检查更新'));
       expect(find.textContaining('1.0.1-preview'), findsOneWidget);
-      final handoff = find.text('前往更新');
-      if (kIsWeb) {
-        expect(handoff, findsNothing);
-      } else {
-        await tap(tester, handoff);
-      }
+      await tap(tester, find.text('前往更新'));
       expect(tester.takeException(), isNull);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,
       TargetPlatform.windows,
     }),
+    skip: kIsWeb,
   );
+
+  testWidgets('wide Web opens the default update page in version-only mode', (
+    tester,
+  ) async {
+    await start(tester, const Size(1440, 900));
+    await tap(tester, find.byTooltip('系统设置'));
+    expect(find.text('关于'), findsNothing);
+    expect(find.text('查看版本'), findsOneWidget);
+
+    await tap(tester, find.text('软件更新'));
+    expect(find.text('当前版本'), findsOneWidget);
+    expect(find.text('1.0.1 (2)'), findsOneWidget);
+    final check = find.widgetWithText(ListTile, '检查更新');
+    final tile = tester.widget<ListTile>(check);
+    expect(tile.enabled, isFalse);
+    expect(tile.onTap, isNull);
+    expect(find.text('当前平台不支持检查更新'), findsOneWidget);
+    await tap(tester, check);
+    final page = tester.widget<UpdatePage>(find.byType(UpdatePage));
+    expect(page.viewModel.status, UpdateCheckStatus.idle);
+    expect(find.text('前往更新'), findsNothing);
+  }, skip: !kIsWeb);
 }
 
 Future<StationModules> start(WidgetTester tester, Size size) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   SharedPreferences.setMockInitialValues({});
-  final modules = (await tester.runAsync(
-    () => StationModules.start(
+  final modules = (await tester.runAsync(() async {
+    final modules = await StationModules.start(
       package: PackageInfo(
         appName: 'XY-CAR',
         packageName: 'xy_car_app',
         version: '1.0.1',
         buildNumber: '2',
       ),
-    ),
-  ))!;
+    );
+    if (kIsWeb) await modules.gateway.clearLocalSession();
+    return modules;
+  }))!;
   await tester.pumpWidget(XYCarApp(modules: modules));
   await tester.pumpAndSettle();
   return modules;

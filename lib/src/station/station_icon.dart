@@ -11,7 +11,6 @@ enum _StationGlyph {
   cloudDownload,
   fileText,
   globe,
-  info,
   lineChart,
   list,
   manageAccounts,
