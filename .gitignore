@@ -32,6 +32,8 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/third_party/
+/pubspec_overrides.yaml
 
 # Symbolication related
 app.*.symbols

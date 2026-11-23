@@ -4,7 +4,7 @@
 
 ## 本地开发
 
-检出本工程后，直接使用仓库内固定的 `app-foundation` 依赖快照运行：
+将 `xy_car_app` 和 `app-foundation` 放在同一父目录。开发和构建均直接读取 `../app-foundation` 中实际用到的包，公共包的修改在那一个目录完成。确需本机使用特定版本时，可放入 `third_party/` 并通过本地覆盖文件引用。
 
 ```powershell
 flutter pub get
@@ -19,7 +19,7 @@ flutter test
 - Android 沿用 `com.xycar.xy_car_app` 和原签名。签名配置及密钥放在 `android/key.properties` 和 `android/keystore/`，由本地 Git 忽略规则保护。
 - Windows 可执行文件为 `xy_car_app.exe`，安装器沿用 `xy_car_app` 标识，模板位于 `packaging/windows/`。
 - Web 使用同源 `/api/`，网关模板位于 `packaging/docker/`。Docker 发布入口为 `scripts/build_web_docker.ps1`，需要配套 API 工程和 Python 环境。
-- GitHub Actions 的 `web-ghcr.yml` 从 Git 版本标签构建并发布 `linux/amd64` Web 镜像。发布产物包含按镜像摘要固定的 NAS Compose。手动选择 `publish-nas` 时才更新 `nas` 渠道标签。
+- 在能访问本地 Foundation 源码的构建机上生成并验证 `linux/amd64` Web 镜像。发布 GHCR 时，使用有推送权限的 Docker 登录来上传镜像，并更新 `packaging/docker/docker-compose.ghcr.yml` 中的镜像摘要。
 - Web 镜像将 CanvasKit、字体、图片等静态资源、应用代码分成独立镜像层。NAS 首次由 GHCR 拉取完整镜像，后续按摘要复用本机已有层。
 - 原生端账号服务可通过 `APP_SERVICE_ORIGIN` 或应用设置指定。发布清单沿用 `xy_car_app`，可通过 `XY_CAR_RELEASE_ORIGIN` 单独设定来源。Android 和 Windows 的正式安装包下载及安装交接仍待接入。Web 正式版的「关于」显示版本。
 

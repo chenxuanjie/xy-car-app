@@ -8,17 +8,17 @@ environment:
 
 dependencies:
   app_client:
-    path: third_party/app-foundation/legacy_packages/app_client
+    path: ../app-foundation/legacy_packages/app_client
   app_core:
-    path: third_party/app-foundation/packages/app_core
+    path: ../app-foundation/packages/app_core
   app_identity:
-    path: third_party/app-foundation/packages/app_identity
+    path: ../app-foundation/packages/app_identity
   app_module_api:
-    path: third_party/app-foundation/packages/app_module_api
+    path: ../app-foundation/packages/app_module_api
   app_settings:
-    path: third_party/app-foundation/packages/app_settings
+    path: ../app-foundation/packages/app_settings
   app_update:
-    path: third_party/app-foundation/packages/app_update
+    path: ../app-foundation/packages/app_update
   crypto: ^3.0.7
   flutter:
     sdk: flutter
@@ -28,7 +28,7 @@ dependencies:
   http: ^1.6.0
   package_info_plus: ^8.3.0
   remote_update:
-    path: third_party/app-foundation/legacy_packages/remote_update
+    path: ../app-foundation/legacy_packages/remote_update
   shared_preferences: ^2.5.3
   win32_registry: ^2.1.0
 

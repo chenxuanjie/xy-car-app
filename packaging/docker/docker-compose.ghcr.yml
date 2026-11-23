@@ -1,7 +1,7 @@
 # DSM HTTPS cznas.pp.ua:8090 -> HTTP 127.0.0.1:8089.
 services:
   xy-car-web:
-    image: ghcr.io/chenxuanjie/xy-car-app:nas
+    image: ghcr.io/chenxuanjie/xy-car-app@sha256:67d0b94e99eaa3d9a04d62a9fe6956e9463f661e80128bf6644292f856fdd54f
     platform: linux/amd64
     pull_policy: always
     restart: unless-stopped
