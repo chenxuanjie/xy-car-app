@@ -53,7 +53,11 @@ class _LogsState extends State<_Logs> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.terminal, color: _cyan, size: 20),
+                    const _StationIcon(
+                      _StationGlyph.activity,
+                      color: _cyan,
+                      size: 20,
+                    ),
                     const SizedBox(width: 7),
                     Expanded(
                       child: Text(
@@ -65,7 +69,7 @@ class _LogsState extends State<_Logs> {
                       ),
                     ),
                     _Control(
-                      icon: Icons.delete_sweep_outlined,
+                      icon: const _StationIcon(_StationGlyph.refreshCw),
                       width: 36,
                       tooltip: tr('清空日志', 'Clear logs'),
                       onPressed: widget.onClear,
@@ -73,7 +77,7 @@ class _LogsState extends State<_Logs> {
                     if (widget.onClose != null) ...[
                       const SizedBox(width: 6),
                       _Control(
-                        icon: Icons.close,
+                        icon: const _StationIcon(_StationGlyph.x),
                         width: 36,
                         tooltip: tr('关闭', 'Close'),
                         onPressed: widget.onClose,
@@ -135,7 +139,7 @@ class _LogsState extends State<_Logs> {
                   ),
                   const SizedBox(width: 8),
                   _Control(
-                    icon: Icons.send_outlined,
+                    icon: const _StationIcon(_StationGlyph.send),
                     width: 36,
                     onPressed: _submit,
                     tooltip: tr('发送', 'Send'),
@@ -343,13 +347,13 @@ class _ChartState extends State<_Chart> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _PanelTitle(
-              Icons.show_chart,
+              const _StationIcon(_StationGlyph.activity),
               tr('数据分析图表', 'DATA ANALYSIS'),
               color: _cyan,
               trailing: widget.onClose == null
                   ? null
                   : _Control(
-                      icon: Icons.close,
+                      icon: const _StationIcon(_StationGlyph.x),
                       width: 36,
                       tooltip: tr('关闭', 'Close'),
                       onPressed: widget.onClose,
@@ -365,7 +369,9 @@ class _ChartState extends State<_Chart> {
                 _channel(_Channel.heading, tr('航向角', 'HEADING')),
                 _Control(
                   label: _paused ? tr('继续', 'Resume') : tr('暂停', 'Pause'),
-                  icon: _paused ? Icons.play_arrow : Icons.pause,
+                  icon: _StationIcon(
+                    _paused ? _StationGlyph.play : _StationGlyph.pause,
+                  ),
                   onPressed: () => setState(() => _paused = !_paused),
                 ),
               ],

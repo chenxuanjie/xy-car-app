@@ -159,7 +159,7 @@ class _MissionArchiveState extends State<_MissionArchive> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(name),
-                  trailing: const Icon(Icons.download_outlined),
+                  trailing: const _StationIcon(_StationGlyph.cloudDownload),
                   onTap: _working ? null : () => _load(name),
                 ),
               if (_next != null)

@@ -22,8 +22,8 @@ class _Brand extends StatelessWidget {
               BoxShadow(color: Color(0x3306b6d4), blurRadius: 10),
             ],
           ),
-          child: Icon(
-            Icons.monitor_heart_outlined,
+          child: _StationIcon(
+            _StationGlyph.activity,
             color: _cyan,
             size: compact ? 18 : 24,
           ),
@@ -82,7 +82,7 @@ class _Control extends StatelessWidget {
   });
 
   final String? label;
-  final IconData? icon;
+  final Widget? icon;
   final String? tooltip;
   final VoidCallback? onPressed;
   final bool selected;
@@ -115,7 +115,13 @@ class _Control extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (icon case final icon?)
-                  Icon(icon, size: label == null ? 19 : 15, color: color),
+                  IconTheme.merge(
+                    data: IconThemeData(
+                      size: label == null ? 19 : 15,
+                      color: color,
+                    ),
+                    child: icon,
+                  ),
                 if (icon != null && label != null) const SizedBox(width: 6),
                 if (label case final label?)
                   Flexible(
@@ -290,7 +296,7 @@ class _PanelTitle extends StatelessWidget {
     this.trailing,
   });
 
-  final IconData icon;
+  final Widget icon;
   final String label;
   final Color color;
   final Widget? trailing;
@@ -299,7 +305,10 @@ class _PanelTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: color, size: 21),
+        IconTheme.merge(
+          data: IconThemeData(size: 21, color: color),
+          child: icon,
+        ),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -374,7 +383,7 @@ class _StatusPanel extends StatelessWidget {
       child: Column(
         children: [
           _PanelTitle(
-            Icons.location_on_outlined,
+            const _StationIcon(_StationGlyph.mapPin),
             tr('状态监控', 'STATUS MONITOR'),
             color: _cyan,
             trailing: Text(
@@ -413,7 +422,11 @@ class _StatusPanel extends StatelessWidget {
                         child: SizedBox(width: 3, height: 8),
                       ),
                     ),
-                    const Icon(Icons.near_me_outlined, color: _teal, size: 24),
+                    const _StationIcon(
+                      _StationGlyph.navigation,
+                      color: _teal,
+                      size: 24,
+                    ),
                   ],
                 ),
               ),
@@ -533,7 +546,7 @@ class _Sidebar extends StatelessWidget {
             child: Column(
               children: [
                 _PanelTitle(
-                  Icons.settings_outlined,
+                  const _StationIcon(_StationGlyph.settings),
                   tr('系统配置', 'SYSTEM CONFIG'),
                 ),
                 const SizedBox(height: 12),
@@ -597,7 +610,7 @@ class _Sidebar extends StatelessWidget {
             child: Column(
               children: [
                 _PanelTitle(
-                  Icons.near_me_outlined,
+                  const _StationIcon(_StationGlyph.navigation),
                   tr('任务航点', 'MISSION'),
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(
@@ -617,7 +630,7 @@ class _Sidebar extends StatelessWidget {
                 const SizedBox(height: 12),
                 _Control(
                   label: tr('下发航点 (Send WP)', 'SEND MISSION (WP)'),
-                  icon: Icons.send_outlined,
+                  icon: const _StationIcon(_StationGlyph.send),
                   width: double.infinity,
                   background: waypointCount == 0
                       ? const Color(0xff14532d)
@@ -631,7 +644,7 @@ class _Sidebar extends StatelessWidget {
                 const SizedBox(height: 8),
                 _Control(
                   label: tr('任务存档', 'Saved missions'),
-                  icon: Icons.folder_open_outlined,
+                  icon: const _StationIcon(_StationGlyph.list),
                   width: double.infinity,
                   onPressed: onOpenMissions,
                 ),
@@ -649,20 +662,20 @@ class _Sidebar extends StatelessWidget {
             child: Column(
               children: [
                 _PanelTitle(
-                  Icons.gamepad_outlined,
+                  const Icon(Icons.gamepad_outlined),
                   tr('手动控制', 'MANUAL OVERRIDE'),
                 ),
                 const SizedBox(height: 10),
-                _direction(Icons.keyboard_arrow_up, 'W'),
+                _direction(_StationGlyph.arrowUp, 'W'),
                 const SizedBox(height: 5),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _direction(Icons.keyboard_arrow_left, 'A'),
+                    _direction(_StationGlyph.arrowLeft, 'A'),
                     const SizedBox(width: 5),
-                    _direction(Icons.keyboard_arrow_down, 'S'),
+                    _direction(_StationGlyph.arrowDown, 'S'),
                     const SizedBox(width: 5),
-                    _direction(Icons.keyboard_arrow_right, 'D'),
+                    _direction(_StationGlyph.arrowRight, 'D'),
                   ],
                 ),
               ],
@@ -673,9 +686,9 @@ class _Sidebar extends StatelessWidget {
     );
   }
 
-  Widget _direction(IconData icon, String key) {
+  Widget _direction(_StationGlyph icon, String key) {
     return _Control(
-      icon: icon,
+      icon: _StationIcon(icon),
       tooltip: key,
       onPressed: onSend,
       width: 38,

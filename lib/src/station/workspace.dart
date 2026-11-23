@@ -35,7 +35,7 @@ class _Workspace extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.videocam_off_outlined, color: _dim, size: 36),
+                const _StationIcon(_StationGlyph.video, color: _dim, size: 36),
                 const SizedBox(height: 10),
                 Text(
                   tr('无信号输入', 'NO SIGNAL'),
@@ -73,7 +73,7 @@ class _Workspace extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.location_on_outlined, color: _yellow, size: 33),
+                _StationIcon(_StationGlyph.mapPin, color: _yellow, size: 33),
                 SizedBox(height: 6),
                 Text(
                   'WAITING FOR GPS FIX...',
@@ -95,7 +95,7 @@ class _Workspace extends StatelessWidget {
             children: [
               _Control(
                 label: tr('浏览', 'Browse'),
-                icon: Icons.pan_tool_outlined,
+                icon: const _StationIcon(_StationGlyph.mapHand),
                 selected: !adding,
                 background: !adding ? _teal : _surface,
                 foreground: !adding ? Colors.white : _muted,
@@ -104,7 +104,7 @@ class _Workspace extends StatelessWidget {
               const SizedBox(width: 2),
               _Control(
                 label: tr('添加航点', 'Add WP'),
-                icon: Icons.add_location_alt_outlined,
+                icon: const _StationIcon(_StationGlyph.mapAddPin),
                 selected: adding,
                 background: adding ? const Color(0xffa16207) : _surface,
                 foreground: adding ? Colors.white : _muted,
@@ -121,7 +121,7 @@ class _Workspace extends StatelessWidget {
             children: [
               if (waypoints.isNotEmpty) ...[
                 _Control(
-                  icon: Icons.delete_outline,
+                  icon: const _StationIcon(_StationGlyph.trash2),
                   width: 38,
                   height: 38,
                   tooltip: tr('清除航点', 'Clear waypoints'),
@@ -141,7 +141,10 @@ class _Workspace extends StatelessWidget {
                       onTap: onOpenChart,
                       child: const SizedBox.square(
                         dimension: 40,
-                        child: Icon(Icons.add, color: Colors.white),
+                        child: _StationIcon(
+                          _StationGlyph.plus,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -149,7 +152,7 @@ class _Workspace extends StatelessWidget {
                 const SizedBox(height: 24),
               ],
               _Control(
-                icon: Icons.my_location,
+                icon: const _StationIcon(_StationGlyph.mapLocate),
                 width: 38,
                 height: 38,
                 tooltip: tr('定位：等待 GPS', 'Locate: waiting for GPS'),

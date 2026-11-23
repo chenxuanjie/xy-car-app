@@ -8,6 +8,7 @@ import 'package:app_settings/app_settings.dart';
 import 'package:app_update/app_update.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import 'src/app_modules.dart';
 import 'src/station/station_data.dart';
@@ -16,6 +17,7 @@ part 'src/station/panels.dart';
 part 'src/station/workspace.dart';
 part 'src/station/dialogs.dart';
 part 'src/station/mission_archive.dart';
+part 'src/station/station_icon.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -123,14 +125,14 @@ Widget _updateScreen(
             tooltip: MaterialLocalizations.of(context).viewLicensesButtonLabel,
             onPressed: () =>
                 showLicensePage(context: context, applicationName: appName),
-            icon: const Icon(Icons.article_outlined),
+            icon: const _StationIcon(_StationGlyph.fileText),
           ),
       ],
     ),
     body: updates.buildPage(
       context,
       appName: appName,
-      appIcon: const Icon(Icons.monitor_heart_outlined, size: 52),
+      appIcon: const _StationIcon(_StationGlyph.activity, size: 52),
       subtitle: localized(context, '地面站控制终端', 'Ground station'),
     ),
   );
@@ -317,11 +319,12 @@ class _StationState extends State<_Station> {
               SettingsGroup(
                 title: (context) => localized(context, '地面站', 'Ground station'),
                 icon: Icons.settings_input_antenna,
+                leading: const _StationIcon(_StationGlyph.stationAntenna),
                 entries: [
                   SettingsEntry(
                     id: 'station.device',
                     builder: (context) => ListTile(
-                      leading: const Icon(Icons.settings_ethernet),
+                      leading: const _StationIcon(_StationGlyph.server),
                       title: Text(
                         localized(context, '设备连接', 'Device connection'),
                       ),
@@ -336,11 +339,13 @@ class _StationState extends State<_Station> {
                 title: (context) =>
                     localized(context, '账号与版本', 'Account and version'),
                 icon: Icons.manage_accounts_outlined,
+                leading: const _StationIcon(_StationGlyph.manageAccounts),
                 entries: [
                   SettingsEntry(
                     id: 'identity.account',
                     builder: (context) => IdentityAccountTile(
                       controller: _modules.identity,
+                      leading: const _StationIcon(_StationGlyph.accountCircle),
                       onTap: () =>
                           Navigator.of(context).pushNamed(accountRoute),
                     ),
@@ -349,7 +354,7 @@ class _StationState extends State<_Station> {
                   SettingsEntry(
                     id: 'station.about',
                     builder: (context) => ListTile(
-                      leading: const Icon(Icons.info_outline),
+                      leading: const _StationIcon(_StationGlyph.info),
                       title: Text(localized(context, '关于', 'About')),
                       subtitle: Text(
                         'XY-CAR · ${_modules.version} (${_modules.build})',
@@ -418,14 +423,14 @@ class _StationState extends State<_Station> {
                 trailing: IconButton(
                   tooltip: tr('关闭', 'Close'),
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
+                  icon: const _StationIcon(_StationGlyph.x),
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _Control(
                   label: _english ? 'ZH / EN' : '中 / EN',
-                  icon: Icons.language,
+                  icon: const _StationIcon(_StationGlyph.globe),
                   width: double.infinity,
                   onPressed: _toggleLanguage,
                 ),
@@ -510,7 +515,7 @@ class _StationState extends State<_Station> {
               const SizedBox(width: 36),
               _Control(
                 label: _english ? 'ZH / EN' : '中 / EN',
-                icon: Icons.language,
+                icon: const _StationIcon(_StationGlyph.globe),
                 onPressed: _toggleLanguage,
                 foreground: _cyan,
                 border: const Color(0xff155e75),
@@ -539,7 +544,7 @@ class _StationState extends State<_Station> {
               ),
               const SizedBox(width: 8),
               _Control(
-                icon: Icons.settings_outlined,
+                icon: const _StationIcon(_StationGlyph.settings),
                 tooltip: tr('系统设置', 'Settings'),
                 onPressed: _settings,
                 width: 40,
@@ -548,7 +553,7 @@ class _StationState extends State<_Station> {
               const SizedBox(width: 16),
               _Control(
                 label: tr('日志', 'LOG'),
-                icon: Icons.vertical_split_outlined,
+                icon: const _StationIcon(_StationGlyph.sidebar),
                 onPressed: () => setState(() => _showLogs = !_showLogs),
                 selected: _showLogs,
                 height: 40,
@@ -591,11 +596,19 @@ class _StationState extends State<_Station> {
                 builder: (context) => IconButton(
                   tooltip: tr('控制面板', 'Control panel'),
                   onPressed: () => Scaffold.of(context).openDrawer(),
-                  icon: const Icon(Icons.menu, color: _cyan),
+                  icon: const _StationIcon(_StationGlyph.menu, color: _cyan),
                 ),
               ),
               const Expanded(child: _Brand(compact: true)),
-              const Icon(Icons.circle, size: 7, color: _yellow),
+              const SizedBox.square(
+                dimension: 7,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: _yellow,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
               const SizedBox(width: 5),
               Text(
                 tr('离线', 'OFFLINE'),
@@ -604,7 +617,7 @@ class _StationState extends State<_Station> {
               IconButton(
                 tooltip: tr('系统设置', 'Settings'),
                 onPressed: _settings,
-                icon: const Icon(Icons.settings_outlined, color: _muted),
+                icon: const _StationIcon(_StationGlyph.settings, color: _muted),
               ),
             ],
           ),
@@ -624,10 +637,10 @@ class _StationState extends State<_Station> {
           ),
           child: Row(
             children: [
-              _nav(_Section.map, Icons.map_outlined, tr('地图', 'MAP')),
-              _nav(_Section.camera, Icons.videocam_outlined, tr('视频', 'VIDEO')),
-              _nav(_Section.data, Icons.show_chart, tr('数据', 'DATA')),
-              _nav(_Section.logs, Icons.description_outlined, tr('日志', 'LOG')),
+              _nav(_Section.map, _StationGlyph.map, tr('地图', 'MAP')),
+              _nav(_Section.camera, _StationGlyph.video, tr('视频', 'VIDEO')),
+              _nav(_Section.data, _StationGlyph.lineChart, tr('数据', 'DATA')),
+              _nav(_Section.logs, _StationGlyph.fileText, tr('日志', 'LOG')),
             ],
           ),
         ),
@@ -635,7 +648,7 @@ class _StationState extends State<_Station> {
     );
   }
 
-  Widget _nav(_Section section, IconData icon, String label) {
+  Widget _nav(_Section section, _StationGlyph icon, String label) {
     final active = section == _section;
     return Expanded(
       child: Semantics(
@@ -655,7 +668,7 @@ class _StationState extends State<_Station> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 20, color: active ? _cyan : _dim),
+                _StationIcon(icon, size: 20, color: active ? _cyan : _dim),
                 const SizedBox(height: 4),
                 Text(
                   label,

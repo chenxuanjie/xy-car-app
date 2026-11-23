@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,6 +20,19 @@ void main() {
       await tap(tester, find.byTooltip('系统设置'));
       expect(find.text('账号'), findsOneWidget);
       expect(find.text('导入与导出'), findsNothing);
+      final settingsIcons = tester
+          .widgetList<SvgPicture>(find.byType(SvgPicture))
+          .map((icon) => icon.bytesLoader)
+          .whereType<SvgAssetLoader>()
+          .map((loader) => loader.assetName);
+      expect(
+        settingsIcons,
+        containsAll([
+          'assets/icons/station/stationAntenna.svg',
+          'assets/icons/station/manageAccounts.svg',
+          'assets/icons/station/accountCircle.svg',
+        ]),
+      );
       await tap(tester, find.text('设备连接'));
       await tester.enterText(find.byType(TextFormField).at(1), '12345');
       await tap(tester, find.text('应用'));
