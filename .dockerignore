@@ -1,0 +1,8 @@
+**
+!build/
+!build/web/
+!build/web/**
+!packaging/
+!packaging/docker/
+!packaging/docker/Dockerfile
+!packaging/docker/default.conf.template

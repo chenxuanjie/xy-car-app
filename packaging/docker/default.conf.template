@@ -1,0 +1,77 @@
+map $http_cookie $xy_car_cookie {
+    default "";
+    "~(?:^|;\s*)(?<xy_cookie>__Host-app-session-xy_car_app=[^;\s]+)" $xy_cookie;
+}
+
+server {
+    listen 8080;
+    server_name _;
+    server_tokens off;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location = /healthz {
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    location ~ ^/api/v1/apps/xy_car_app/(client-config|auth/browser/(bootstrap|login|restore|logout))$ {
+        client_max_body_size 32k;
+        client_body_timeout 10s;
+        proxy_connect_timeout 8s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 36s;
+        proxy_set_header Cookie $xy_car_cookie;
+        proxy_set_header Origin $http_origin;
+        proxy_set_header X-CSRF-Token $http_x_csrf_token;
+        proxy_set_header X-App-ID xy_car_app;
+        proxy_set_header Authorization "";
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP "";
+        proxy_set_header Forwarded "";
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "no-store" always;
+        rewrite ^/api(/.*)$ $1 break;
+        proxy_pass ${APP_SERVICE_UPSTREAM};
+    }
+
+    location ~ ^/api/v1/apps/xy_car_app/station/(device|mission|missions)$ {
+        client_max_body_size 32k;
+        client_body_timeout 10s;
+        proxy_connect_timeout 8s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 36s;
+        proxy_set_header Cookie "";
+        proxy_set_header Authorization $http_authorization;
+        proxy_set_header X-CSRF-Token "";
+        proxy_set_header X-App-ID xy_car_app;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP "";
+        proxy_set_header Forwarded "";
+        proxy_hide_header Set-Cookie;
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "no-store" always;
+        rewrite ^/api(/.*)$ $1 break;
+        proxy_pass ${APP_SERVICE_UPSTREAM};
+    }
+
+    location ~ ^/api(?:/|$) {
+        return 404;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-store";
+        try_files $uri =404;
+    }
+
+    # Asset directories and filenames must never use the Flutter route fallback.
+    location ~* "(?:^/(?:assets|canvaskit)(?:/|$)|/[^/]+\.[^/]+$)" {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    location / {
+        add_header Cache-Control "no-store";
+        try_files $uri $uri/ /index.html;
+    }
+}
