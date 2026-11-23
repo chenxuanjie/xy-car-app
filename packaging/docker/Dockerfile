@@ -1,4 +1,4 @@
-FROM python:3.14.2-slim-bookworm@sha256:5b500436b051b112e0e834533a4d42a28e4a79c7a5c10f3fd44b47ba1b487995 AS web-layers
+FROM python:3.14.2-slim-bookworm@sha256:e87711ef5c86aaeaa7031718a69db79d334d94c545c709583f651b8185870941 AS web-layers
 COPY build/web/ /web/
 COPY packaging/docker/prepare_web_layers.py /prepare_web_layers.py
 COPY packaging/docker/default.conf.template /default.conf.template
