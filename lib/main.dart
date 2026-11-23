@@ -91,6 +91,7 @@ class _XYCarAppState extends State<XYCarApp> {
         routes: {
           accountRoute: (_) => IdentityPage(
             controller: modules.identity,
+            savedLogins: modules.savedLogins,
             serviceAddress: modules.canConfigureAccount
                 ? modules.accountOrigin
                 : null,

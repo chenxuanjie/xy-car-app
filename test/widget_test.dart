@@ -1,6 +1,7 @@
 import 'package:app_update/app_update.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -73,6 +74,14 @@ void main() {
     final modules = await start(tester, const Size(1440, 900));
     await tap(tester, find.byTooltip('系统设置'));
     await tap(tester, find.text('账号'));
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.byKey(const ValueKey('identity.rememberPassword')),
+          )
+          .value,
+      isFalse,
+    );
     await tester.enterText(
       find.byKey(const ValueKey('identity.username')),
       'demo',
@@ -130,6 +139,8 @@ void main() {
     await tap(tester, find.text('账号'));
     await tap(tester, find.text('退出登录'));
     expect(modules.identity.isVerified, isFalse);
+    expect(await modules.savedLogins.accounts(), ['demo']);
+    expect(await modules.savedLogins.passwordFor('demo'), isNull);
     await expectLater(modules.data.readDevice(), throwsException);
   });
 
@@ -179,6 +190,7 @@ Future<StationModules> start(WidgetTester tester, Size size) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   SharedPreferences.setMockInitialValues({});
+  FlutterSecureStorage.setMockInitialValues({});
   final modules = (await tester.runAsync(() async {
     final modules = await StationModules.start(
       package: PackageInfo(

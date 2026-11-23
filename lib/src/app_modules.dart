@@ -29,6 +29,7 @@ final class StationModules {
     this.settings,
     this.identity,
     this.gateway,
+    this.savedLogins,
     this.data,
     this.updates,
     this.lifecycle,
@@ -39,6 +40,7 @@ final class StationModules {
   final SettingsModule settings;
   final IdentityController identity;
   final StationIdentityGateway gateway;
+  final IdentitySavedLogins savedLogins;
   final StationDataClient data;
   final UpdateModule updates;
   final ModuleLifecycle lifecycle;
@@ -80,6 +82,19 @@ final class StationModules {
       gateway: gateway,
       requestTimeout: const Duration(seconds: 40),
     );
+    final savedLogins = IdentityLoginHistory(
+      appId: xyCarAppId,
+      preferences: storage,
+      serviceScope: () {
+        if (!useLiveAccountService) return 'preview';
+        return kIsWeb
+            ? Uri.base.origin
+            : AppJsonClient.parseOrigin(
+                storage.getString(accountOriginPreference) ??
+                    xyCarServiceOrigin,
+              ).origin;
+      },
+    );
     final data = StationDataClient(
       () => identity.isVerified ? gateway.session : null,
     );
@@ -111,6 +126,7 @@ final class StationModules {
         settings,
         identity,
         gateway,
+        savedLogins,
         data,
         updates,
         lifecycle,
