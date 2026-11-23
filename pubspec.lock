@@ -4,42 +4,42 @@ packages:
   app_client:
     dependency: "direct main"
     description:
-      path: "../app-foundation/legacy_packages/app_client"
+      path: "third_party/app-foundation/legacy_packages/app_client"
       relative: true
     source: path
     version: "0.4.0"
   app_core:
     dependency: "direct main"
     description:
-      path: "../app-foundation/packages/app_core"
+      path: "third_party/app-foundation/packages/app_core"
       relative: true
     source: path
     version: "0.1.0"
   app_identity:
     dependency: "direct main"
     description:
-      path: "../app-foundation/packages/app_identity"
+      path: "third_party/app-foundation/packages/app_identity"
       relative: true
     source: path
     version: "0.4.2"
   app_module_api:
     dependency: "direct main"
     description:
-      path: "../app-foundation/packages/app_module_api"
+      path: "third_party/app-foundation/packages/app_module_api"
       relative: true
     source: path
     version: "0.1.0"
   app_settings:
     dependency: "direct main"
     description:
-      path: "../app-foundation/packages/app_settings"
+      path: "third_party/app-foundation/packages/app_settings"
       relative: true
     source: path
     version: "0.1.0"
   app_update:
     dependency: "direct main"
     description:
-      path: "../app-foundation/packages/app_update"
+      path: "third_party/app-foundation/packages/app_update"
       relative: true
     source: path
     version: "0.1.0"
@@ -498,7 +498,7 @@ packages:
   remote_update:
     dependency: "direct main"
     description:
-      path: "../app-foundation/legacy_packages/remote_update"
+      path: "third_party/app-foundation/legacy_packages/remote_update"
       relative: true
     source: path
     version: "0.1.0"

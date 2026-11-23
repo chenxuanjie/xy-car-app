@@ -1,0 +1,18 @@
+name: app_client
+description: Shared application service transport, sessions and workspace lifecycle.
+version: 0.4.0
+publish_to: none
+environment:
+  sdk: ^3.11.5
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_secure_storage: 9.2.4
+  http: 1.6.0
+  remote_update:
+    path: ../remote_update
+dev_dependencies:
+  crypto: ^3.0.7
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

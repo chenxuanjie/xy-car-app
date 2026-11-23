@@ -1,0 +1,214 @@
+name: Deliver Flutter Web image
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      delivery_mode:
+        description: Check a build, push an image, or also update the NAS channel
+        type: choice
+        options: [build, push, publish-nas]
+        default: build
+      expected_commit:
+        description: Exact Git SHA supplied by the publisher
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  # Set a different repository only if the image name should differ from the App repo.
+  IMAGE_NAME: ${{ github.repository }}
+  FLUTTER_VERSION: '3.41.9' # Match the App's SDK and lockfile.
+  PLATFORM: linux/amd64
+  PUB_HOSTED_URL: https://pub.flutter-io.cn
+  NAS_CHANNEL: nas
+  DEPLOY_COMPOSE: packaging/docker/docker-compose.ghcr.yml
+  DELIVERY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.delivery_mode || 'push' }}
+
+concurrency:
+  group: web-delivery-${{ inputs.delivery_mode == 'publish-nas' && 'nas' || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+    steps:
+      - name: Check out the App
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Check the source and delivery configuration
+        id: metadata
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: |
+          set -euo pipefail
+          revision=$(git rev-parse HEAD)
+          test "$revision" = "$GITHUB_SHA"
+          if [[ -n "$EXPECTED_COMMIT" && "$revision" != "$EXPECTED_COMMIT" ]]; then
+            echo "The selected ref does not match the requested commit." >&2
+            exit 1
+          fi
+          if [[ -e pubspec_overrides.yaml || -L pubspec_overrides.yaml ]]; then
+            echo "Remove pubspec_overrides.yaml before building a release." >&2
+            exit 1
+          fi
+          test -f pubspec.lock
+          version=$(awk '$1 == "version:" { print $2 }' pubspec.yaml)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]]
+          repository="ghcr.io/${IMAGE_NAME,,}"
+          printf 'repository=%s\nimage=%s:sha-%s\nversion=%s\n' "$repository" "$repository" "$revision" "$version" >> "$GITHUB_OUTPUT"
+          python3 -m venv "$RUNNER_TEMP/web-delivery"
+          python="$RUNNER_TEMP/web-delivery/bin/python"
+          "$python" -m pip install --disable-pip-version-check 'PyYAML==6.0.3'
+          "$python" scripts/web_docker_delivery.py \
+            --compose "$DEPLOY_COMPOSE" --repository "$repository" --platform "$PLATFORM" --channel "$NAS_CHANNEL" check
+          docker compose -f "$DEPLOY_COMPOSE" config --quiet
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Build the Flutter site
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter build web --release --no-pub --no-wasm-dry-run
+          test -s build/web/index.html
+          test -z "$(git status --porcelain)"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Build a local image for verification
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: ${{ env.PLATFORM }}
+          file: packaging/docker/Dockerfile
+          load: true
+          push: false
+          provenance: false
+          tags: ${{ steps.metadata.outputs.image }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.metadata.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the image
+        id: verify
+        shell: bash
+        env:
+          WEB_IMAGE: ${{ steps.metadata.outputs.image }}
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$WEB_IMAGE")" = "$PLATFORM"
+          fixture="$RUNNER_TEMP/xy-car-api"
+          mkdir -p "$fixture/v1/apps/xy_car_app"
+          printf '{"app_id":"xy_car_app"}\n' > "$fixture/v1/apps/xy_car_app/client-config"
+          python3 -m http.server 18080 --bind 127.0.0.1 --directory "$fixture" > "$RUNNER_TEMP/xy-car-api.log" 2>&1 &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
+          container=$(docker run --pull never -d --network host --platform "$PLATFORM" \
+            -e APP_SERVICE_UPSTREAM=http://127.0.0.1:18080 "$WEB_IMAGE")
+          trap 'docker rm -f "$container" >/dev/null; kill "$fixture_pid" 2>/dev/null || true' EXIT
+          request() { curl -4fsS --noproxy '*' "$@"; }
+          base=http://127.0.0.1:8080
+          for attempt in {1..30}; do
+            if request "$base/healthz" >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec "$container" nginx -t
+          test "$(request "$base/healthz")" = ok
+          request "$base/" > "$RUNNER_TEMP/web-index.html"
+          request "$base/settings/account" > "$RUNNER_TEMP/web-deep.html"
+          cmp build/web/index.html "$RUNNER_TEMP/web-index.html"
+          cmp "$RUNNER_TEMP/web-index.html" "$RUNNER_TEMP/web-deep.html"
+          request "$base/main.dart.js" > "$RUNNER_TEMP/main.dart.js"
+          cmp build/web/main.dart.js "$RUNNER_TEMP/main.dart.js"
+          request -I "$base/index.html" > "$RUNNER_TEMP/xy-car-entry-headers"
+          grep -qi '^Cache-Control: .*no-store' "$RUNNER_TEMP/xy-car-entry-headers"
+          test "$(curl -4sS --noproxy '*' -o /dev/null -w '%{http_code}' "$base/assets/missing.svg")" = 404
+          test "$(curl -4sS --noproxy '*' -o /dev/null -w '%{http_code}' "$base/api/v1/apps/other/client-config")" = 404
+          request "$base/api/v1/apps/xy_car_app/client-config" > "$RUNNER_TEMP/xy-car-client-config"
+          cmp "$fixture/v1/apps/xy_car_app/client-config" "$RUNNER_TEMP/xy-car-client-config"
+          printf 'image_id=%s\n' "$(docker image inspect --format '{{.Id}}' "$WEB_IMAGE")" >> "$GITHUB_OUTPUT"
+          printf '{"passed":true,"checks":["platform","nginx config","healthz","SPA fallback","entry cache","missing assets","scoped API proxy","Web artifact bytes"]}\n' > "$RUNNER_TEMP/web-validation.json"
+
+      - name: Log in to GHCR
+        if: env.DELIVERY_MODE != 'build'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the verified image
+        if: env.DELIVERY_MODE != 'build'
+        id: publish
+        shell: bash
+        env:
+          WEB_IMAGE: ${{ steps.metadata.outputs.image }}
+          IMAGE_REPOSITORY: ${{ steps.metadata.outputs.repository }}
+          APP_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          version_tag=""
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            source_version=$(sed -E 's/-rc\.[0-9]+\+/+/' <<< "${GITHUB_REF_NAME#v}")
+            test "$source_version" = "$APP_VERSION"
+            version_tag=${GITHUB_REF_NAME//+/-}
+            [[ "$version_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?-[0-9]+$ ]]
+          fi
+          docker push "$WEB_IMAGE" | tee "$RUNNER_TEMP/web-docker-push.log"
+          digest=$(sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\) .*/\1/p' "$RUNNER_TEMP/web-docker-push.log" | tail -n 1)
+          test -n "$digest"
+          reference="$IMAGE_REPOSITORY@$digest"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            docker buildx imagetools create --prefer-index=false --tag "$IMAGE_REPOSITORY:$version_tag" "$reference"
+          fi
+          if [[ "$DELIVERY_MODE" == publish-nas ]]; then
+            docker buildx imagetools create --prefer-index=false --tag "$IMAGE_REPOSITORY:$NAS_CHANNEL" "$reference"
+          fi
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+          printf 'Published image: `%s`\n' "$reference" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify registry digest ${{ steps.publish.outputs.digest }}
+        if: env.DELIVERY_MODE != 'build'
+        shell: bash
+        env:
+          IMAGE_REPOSITORY: ${{ steps.metadata.outputs.repository }}
+          PUBLISHED_DIGEST: ${{ steps.publish.outputs.digest }}
+        run: docker buildx imagetools inspect "$IMAGE_REPOSITORY@$PUBLISHED_DIGEST"
+
+      - name: Write checksums and Compose files
+        shell: bash
+        env:
+          IMAGE_REPOSITORY: ${{ steps.metadata.outputs.repository }}
+          IMAGE_ID: ${{ steps.verify.outputs.image_id }}
+          IMAGE_DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          "$RUNNER_TEMP/web-delivery/bin/python" scripts/web_docker_delivery.py \
+            --compose "$DEPLOY_COMPOSE" --repository "$IMAGE_REPOSITORY" --platform "$PLATFORM" --channel "$NAS_CHANNEL" \
+            record --mode "$DELIVERY_MODE" --commit "$GITHUB_SHA" --image-id "$IMAGE_ID" --digest "$IMAGE_DIGEST" \
+            --validation "$RUNNER_TEMP/web-validation.json" --output "$RUNNER_TEMP/web-ghcr-deployment"
+
+      - name: Upload delivery records
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-ghcr-deployment
+          path: ${{ runner.temp }}/web-ghcr-deployment/
+          if-no-files-found: error
