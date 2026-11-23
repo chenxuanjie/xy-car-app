@@ -42,3 +42,15 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icons/station/
+    - assets/ccy/img/
+    - assets/ccy/svg/
+  fonts:
+    - family: SpaceGrotesk
+      fonts:
+        - asset: assets/ccy/fonts/SpaceGrotesk.ttf
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/ccy/fonts/JetBrainsMono.ttf
+    - family: Inter
+      fonts:
+        - asset: assets/ccy/fonts/Inter.ttf

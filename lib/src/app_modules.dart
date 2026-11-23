@@ -18,6 +18,7 @@ import 'station/station_data.dart';
 import 'updates/station_updates.dart';
 
 const languagePreference = 'station.language';
+const wideWebThemePreference = 'station.wideWebTheme';
 const accountRoute = '/settings/account';
 const updateRoute = '/settings/update';
 
@@ -64,6 +65,17 @@ final class StationModules {
           defaultValue: 'zh',
           choices: {'zh': (_) => '简体中文', 'en': (_) => 'English'},
         ),
+        if (kIsWeb)
+          SettingsOption(
+            id: wideWebThemePreference,
+            segmented: true,
+            title: (context) => localized(context, '宽屏主题', 'Wide-screen theme'),
+            defaultValue: 'classic',
+            choices: {
+              'classic': (context) => localized(context, '经典', 'Classic'),
+              'ccy': (_) => 'CCY',
+            },
+          ),
       ],
     );
     final gateway = StationIdentityGateway(

@@ -23,6 +23,7 @@ void main() {
       expect(find.text('账号'), findsOneWidget);
       expect(find.text('导入与导出'), findsNothing);
       expect(find.text('关于'), findsNothing);
+      if (!kIsWeb) expect(find.text('宽屏主题'), findsNothing);
       final settingsIcons = tester
           .widgetList<SvgPicture>(find.byType(SvgPicture))
           .map((icon) => icon.bytesLoader)
@@ -183,6 +184,58 @@ void main() {
     final page = tester.widget<UpdatePage>(find.byType(UpdatePage));
     expect(page.viewModel.status, UpdateCheckStatus.idle);
     expect(find.text('前往更新'), findsNothing);
+  }, skip: !kIsWeb);
+
+  testWidgets('CCY theme switches only on wide Web and keeps its preference', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final modules = await start(tester, const Size(1440, 900));
+    expect(find.text('TELOPS'), findsNothing);
+    await tap(tester, find.byTooltip('系统设置'));
+    expect(find.text('宽屏主题'), findsOneWidget);
+    await tester.tap(find.text('CCY'));
+    await tester.pump();
+    expect(modules.settings.preferences.values[wideWebThemePreference], 'ccy');
+    await tester.binding.handlePopRoute();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('TELOPS'), findsOneWidget);
+
+    await tester.tap(find.text('监控'));
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(find.byKey(const ValueKey('mon-mods')), findsOneWidget);
+    expect(find.text('模块 / MODULES'), findsOneWidget);
+
+    tester.view.physicalSize = const Size(1024, 760);
+    await tester.binding.setSurfaceSize(const Size(1024, 760));
+    await tester.pump();
+    expect(find.text('TELOPS'), findsNothing);
+    expect(find.byTooltip('系统设置'), findsOneWidget);
+    await tap(tester, find.byTooltip('系统设置'));
+    expect(find.text('宽屏主题'), findsNothing);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(modules.settings.preferences.values[wideWebThemePreference], 'ccy');
+
+    tester.view.physicalSize = const Size(1440, 900);
+    await tester.binding.setSurfaceSize(const Size(1440, 900));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('TELOPS'), findsOneWidget);
+    await tester.tap(find.text('设置'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('宽屏主题'), findsOneWidget);
+    await tester.tap(find.text('经典'));
+    await tester.pump();
+    await tap(tester, find.text('完成'));
+    expect(find.text('TELOPS'), findsNothing);
+    expect(
+      modules.settings.preferences.values[wideWebThemePreference],
+      'classic',
+    );
+    expect(tester.takeException(), isNull);
   }, skip: !kIsWeb);
 }
 

@@ -6,11 +6,13 @@ import 'package:app_identity/app_identity.dart';
 import 'package:app_module_api/app_module_api.dart';
 import 'package:app_settings/app_settings.dart';
 import 'package:app_update/app_update.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'src/app_modules.dart';
+import 'src/ccy/ccy_preview.dart';
 import 'src/station/station_data.dart';
 
 part 'src/station/panels.dart';
@@ -86,7 +88,11 @@ class _XYCarAppState extends State<XYCarApp> {
               'sans-serif',
             ],
           ),
-          child: _Station(modules: modules),
+          child: _Station(
+            modules: modules,
+            ccyThemeSelected:
+                snapshot.requireData[wideWebThemePreference] == 'ccy',
+          ),
         ),
         routes: {
           accountRoute: (_) => IdentityPage(
@@ -125,9 +131,10 @@ Widget _updateScreen(BuildContext context, UpdateModule updates) => Scaffold(
 enum _Section { map, camera, data, logs }
 
 class _Station extends StatefulWidget {
-  const _Station({required this.modules});
+  const _Station({required this.modules, required this.ccyThemeSelected});
 
   final StationModules modules;
+  final bool ccyThemeSelected;
 
   @override
   State<_Station> createState() => _StationState();
@@ -317,6 +324,9 @@ class _StationState extends State<_Station> {
                     ),
                   ),
                   _modules.settings.preferenceEntry(languagePreference),
+                  if (kIsWeb &&
+                      MediaQuery.sizeOf(context).width >= ccyMinimumWidth)
+                    _modules.settings.preferenceEntry(wideWebThemePreference),
                 ],
               ),
               SettingsGroup(
@@ -344,6 +354,24 @@ class _StationState extends State<_Station> {
     );
   }
 
+  void _showThemeSettings() {
+    final entry = _modules.settings.preferenceEntry(wideWebThemePreference);
+    unawaited(
+      showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          content: SizedBox(width: 320, child: entry.builder(context)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(tr('完成', 'Done')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _deviceSettings(BuildContext context) async {
     final generation = _accountGeneration;
     final result =
@@ -366,7 +394,18 @@ class _StationState extends State<_Station> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (kIsWeb &&
+          widget.ccyThemeSelected &&
+          constraints.maxWidth >= ccyMinimumWidth) {
+        return CcyPreview(onThemeSettings: _showThemeSettings);
+      }
+      return _classicStation();
+    },
+  );
+
+  Widget _classicStation() {
     return Scaffold(
       drawer: Drawer(
         backgroundColor: _background,

@@ -14,6 +14,8 @@ flutter test
 
 开发运行默认使用进程内的测试服务，账号和密码均为 `demo`。正式构建默认使用现有 `xy_car_app` 账号服务。可用 `--dart-define=XY_CAR_LIVE_ACCOUNT=true` 在开发时连接正式服务，或设为 `false` 在 Release 构建中使用测试服务。
 
+Web 窗口宽度达到 1280 逻辑像素时，可在「系统设置 → 宽屏主题」选择 CCY。该主题沿用 CCY 原工程 `09d8f7d` 的界面与素材，游戏和监控模式使用本地演示数据。点击 CCY 底栏的「设置」可切回经典主题。
+
 ## 正式环境
 
 - Android 沿用 `com.xycar.xy_car_app` 和原签名。签名配置及密钥放在 `android/key.properties` 和 `android/keystore/`，由本地 Git 忽略规则保护。
