@@ -20,6 +20,7 @@ flutter test
 - Windows 可执行文件为 `xy_car_app.exe`，安装器沿用 `xy_car_app` 标识，模板位于 `packaging/windows/`。
 - Web 使用同源 `/api/`，网关模板位于 `packaging/docker/`。Docker 发布入口为 `scripts/build_web_docker.ps1`，需要配套 API 工程和 Python 环境。
 - GitHub Actions 的 `web-ghcr.yml` 从 Git 版本标签构建并发布 `linux/amd64` Web 镜像。发布产物包含按镜像摘要固定的 NAS Compose。手动选择 `publish-nas` 时才更新 `nas` 渠道标签。
+- Web 镜像将 CanvasKit、字体、图片等静态资源、应用代码分成独立镜像层。NAS 首次由 GHCR 拉取完整镜像，后续按摘要复用本机已有层。
 - 原生端账号服务可通过 `APP_SERVICE_ORIGIN` 或应用设置指定。发布清单沿用 `xy_car_app`，可通过 `XY_CAR_RELEASE_ORIGIN` 单独设定来源。Android 和 Windows 的正式安装包下载及安装交接仍待接入。Web 正式版的「关于」显示版本。
 
 许可证为 GPL-3.0-or-later，见 [LICENSE](LICENSE)。

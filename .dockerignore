@@ -6,3 +6,4 @@
 !packaging/docker/
 !packaging/docker/Dockerfile
 !packaging/docker/default.conf.template
+!packaging/docker/prepare_web_layers.py

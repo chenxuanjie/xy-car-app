@@ -3,6 +3,17 @@ map $http_cookie $xy_car_cookie {
     "~(?:^|;\s*)(?<xy_cookie>__Host-app-session-xy_car_app=[^;\s]+)" $xy_cookie;
 }
 
+map $uri $xy_web_etag {
+    default "";
+    include /etc/nginx/web-etags.map;
+}
+
+map "$request_method|$xy_web_etag|$http_if_none_match" $xy_web_not_modified {
+    default 0;
+    '~^(?:GET|HEAD)\|"sha256:([a-f0-9]{64})"\|(?:.*,\s*)?(?:W/)?"sha256:\1"(?:\s*,.*)?$' 1;
+    '~^(?:GET|HEAD)\|"sha256:[a-f0-9]{64}"\|\*$' 1;
+}
+
 server {
     listen 8080;
     server_name _;
@@ -61,12 +72,18 @@ server {
 
     location = /index.html {
         add_header Cache-Control "no-store";
+        etag off;
+        if_modified_since off;
         try_files $uri =404;
     }
 
     # Asset directories and filenames must never use the Flutter route fallback.
     location ~* "(?:^/(?:assets|canvaskit)(?:/|$)|/[^/]+\.[^/]+$)" {
         add_header Cache-Control "no-cache";
+        add_header ETag $xy_web_etag;
+        etag off;
+        if_modified_since off;
+        if ($xy_web_not_modified) { return 304; }
         try_files $uri =404;
     }
 

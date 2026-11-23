@@ -141,12 +141,18 @@ jobs:
           cmp build/web/main.dart.js "$RUNNER_TEMP/main.dart.js"
           request -I "$base/index.html" > "$RUNNER_TEMP/xy-car-entry-headers"
           grep -qi '^Cache-Control: .*no-store' "$RUNNER_TEMP/xy-car-entry-headers"
+          favicon_hash=$(sha256sum build/web/favicon.png | cut -d ' ' -f 1)
+          etag="\"sha256:$favicon_hash\""
+          request -I "$base/favicon.png" > "$RUNNER_TEMP/xy-car-asset-headers"
+          grep -qiF "ETag: $etag" "$RUNNER_TEMP/xy-car-asset-headers"
+          test "$(curl -4sS --noproxy '*' -o /dev/null -w '%{http_code}' -H "If-None-Match: W/$etag" "$base/favicon.png")" = 304
+          test "$(curl -4sS --noproxy '*' -o /dev/null -w '%{http_code}' -H 'If-None-Match: "stale"' "$base/favicon.png")" = 200
           test "$(curl -4sS --noproxy '*' -o /dev/null -w '%{http_code}' "$base/assets/missing.svg")" = 404
           test "$(curl -4sS --noproxy '*' -o /dev/null -w '%{http_code}' "$base/api/v1/apps/other/client-config")" = 404
           request "$base/api/v1/apps/xy_car_app/client-config" > "$RUNNER_TEMP/xy-car-client-config"
           cmp "$fixture/v1/apps/xy_car_app/client-config" "$RUNNER_TEMP/xy-car-client-config"
           printf 'image_id=%s\n' "$(docker image inspect --format '{{.Id}}' "$WEB_IMAGE")" >> "$GITHUB_OUTPUT"
-          printf '{"passed":true,"checks":["platform","nginx config","healthz","SPA fallback","entry cache","missing assets","scoped API proxy","Web artifact bytes"]}\n' > "$RUNNER_TEMP/web-validation.json"
+          printf '{"passed":true,"checks":["platform","nginx config","healthz","SPA fallback","entry cache","content ETags","missing assets","scoped API proxy","Web artifact bytes"]}\n' > "$RUNNER_TEMP/web-validation.json"
 
       - name: Log in to GHCR
         if: env.DELIVERY_MODE != 'build'
