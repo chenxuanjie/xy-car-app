@@ -8,6 +8,10 @@ class S {
   static const noAlerts = '无告警';
   static const noLogs = '无日志';
   static const noModule = 'no module';
+  static const noModuleData = '暂无模块数据';
+  static const openDemoModules = '查看演示模块';
+  static const exitDemo = '退出演示';
+  static const backToVehicle = '返回实车视图';
 
   // 连接
   static const connect = '连接 / LINK';

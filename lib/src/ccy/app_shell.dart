@@ -17,12 +17,14 @@ class AppShell extends StatefulWidget {
     super.key,
     required this.store,
     required this.onThemeSettings,
+    required this.onToggleDemo,
     this.demoConnect = false,
     this.demoMods = false,
     this.demoMode = 'play',
   });
   final Store store;
   final VoidCallback onThemeSettings;
+  final VoidCallback onToggleDemo;
   final bool demoConnect;
   final bool demoMods;
   final String demoMode;
@@ -165,6 +167,7 @@ class _AppShellState extends State<AppShell> {
                       width: cw,
                       height: ch,
                       child: ListenableBuilder(
+                        key: ObjectKey(store),
                         listenable: store,
                         builder: (context, _) => Hotkeys(
                           store: store,
@@ -183,6 +186,7 @@ class _AppShellState extends State<AppShell> {
                                 child: TopBar(
                                   store: store,
                                   onThemeSettings: widget.onThemeSettings,
+                                  onExitDemo: widget.onToggleDemo,
                                   demoConnect: widget.demoConnect,
                                   openInfo: _showInfo,
                                   openMods: _showMods,
@@ -337,7 +341,7 @@ class _AppShellState extends State<AppShell> {
         }),
       );
     } else if (name == 'mods' && _showMods) {
-      content = ModsWindow(store: store);
+      content = ModsWindow(store: store, onOpenDemo: widget.onToggleDemo);
       grabH = 40;
       w = L.modsW;
       h = L.modsH;
@@ -418,7 +422,12 @@ class _AppShellState extends State<AppShell> {
         key: const ValueKey('mon-mods'),
         left: L.monPad,
         top: L.monMainTop,
-        child: ModsWindow(store: store, width: L.monModsW, height: mainH),
+        child: ModsWindow(
+          store: store,
+          onOpenDemo: widget.onToggleDemo,
+          width: L.monModsW,
+          height: mainH,
+        ),
       ),
     ];
   }

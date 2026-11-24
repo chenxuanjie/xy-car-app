@@ -16,6 +16,7 @@ class TopBar extends StatefulWidget {
     super.key,
     required this.store,
     required this.onThemeSettings,
+    required this.onExitDemo,
     required this.openInfo,
     required this.openMods,
     required this.openGen,
@@ -28,6 +29,7 @@ class TopBar extends StatefulWidget {
 
   final Store store;
   final VoidCallback onThemeSettings;
+  final VoidCallback onExitDemo;
   final bool openInfo;
   final bool openMods;
   final bool openGen;
@@ -148,13 +150,26 @@ class _TopBarState extends State<TopBar> {
                 ],
                 _ModeSwitch(mode: widget.mode, onChanged: widget.onMode),
                 const SizedBox(width: 14),
-                GestureDetector(
-                  onTap: () => showDialog<void>(
-                    context: context,
-                    builder: (_) => ConnectDialog(store: s),
+                if (s.isDemo)
+                  Tooltip(
+                    message: S.backToVehicle,
+                    child: Pressable(
+                      onPressed: widget.onExitDemo,
+                      builder: (context, state) => _chip(
+                        tint: T.warn,
+                        hovered: state.hovered,
+                        child: Text(S.exitDemo, style: mono(9.5, T.warn)),
+                      ),
+                    ),
+                  )
+                else
+                  GestureDetector(
+                    onTap: () => showDialog<void>(
+                      context: context,
+                      builder: (_) => ConnectDialog(store: s),
+                    ),
+                    child: _linkChip(linked),
                   ),
-                  child: _linkChip(linked),
-                ),
                 const SizedBox(width: 8),
                 _clock(
                   '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}',

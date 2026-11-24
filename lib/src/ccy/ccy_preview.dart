@@ -21,22 +21,33 @@ class CcyPreview extends StatefulWidget {
 }
 
 class _CcyPreviewState extends State<CcyPreview> {
-  late final Store _store;
+  static const _startInDemo = bool.fromEnvironment('XY_CAR_CCY_DEMO');
+
+  final _vehicleStore = Store(newTransport: WebSocketTransport.new);
+  Store? _demoStore;
 
   @override
   void initState() {
     super.initState();
-    const isDemo = bool.fromEnvironment('XY_CAR_CCY_DEMO');
-    _store = Store(
-      newTransport: isDemo ? DemoTransport.new : WebSocketTransport.new,
-      isDemo: isDemo,
-    );
-    if (isDemo) unawaited(_store.connect());
+    if (_startInDemo) _demoStore = _createDemoStore();
+  }
+
+  Store _createDemoStore() {
+    final store = Store(newTransport: DemoTransport.new, isDemo: true);
+    unawaited(store.connect());
+    return store;
+  }
+
+  void _toggleDemo() {
+    final previous = _demoStore;
+    setState(() => _demoStore = previous == null ? _createDemoStore() : null);
+    previous?.dispose();
   }
 
   @override
   void dispose() {
-    _store.dispose();
+    _demoStore?.dispose();
+    _vehicleStore.dispose();
     super.dispose();
   }
 
@@ -48,7 +59,11 @@ class _CcyPreviewState extends State<CcyPreview> {
       fontFamily: 'Segoe UI',
     ),
     child: Scaffold(
-      body: AppShell(store: _store, onThemeSettings: widget.onThemeSettings),
+      body: AppShell(
+        store: _demoStore ?? _vehicleStore,
+        onThemeSettings: widget.onThemeSettings,
+        onToggleDemo: _toggleDemo,
+      ),
     ),
   );
 }

@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xy_car_app/main.dart';
 import 'package:xy_car_app/src/app_modules.dart';
+import 'package:xy_car_app/src/ccy/ui/module_card.dart';
 
 void main() {
   testWidgets(
@@ -208,6 +209,31 @@ void main() {
     await tester.pump(const Duration(milliseconds: 60));
     expect(find.byKey(const ValueKey('mon-mods')), findsOneWidget);
     expect(find.text('模块 / MODULES'), findsOneWidget);
+    expect(find.text('暂无模块数据'), findsOneWidget);
+
+    await tester.tap(find.text('查看演示模块'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(find.byType(ModuleCard), findsNWidgets(7));
+    expect(find.text('退出演示'), findsOneWidget);
+    expect(find.text('LINK —'), findsNothing);
+    await tester.tap(find.text('IMU 姿态'));
+    await tester.pump();
+    final imuCard = tester.widget<ModuleCard>(
+      find.ancestor(
+        of: find.text('IMU 姿态'),
+        matching: find.byType(ModuleCard),
+      ),
+    );
+    expect(imuCard.open, isTrue);
+    expect(imuCard.selected, isTrue);
+
+    await tester.tap(find.text('退出演示'));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('mon-mods')), findsOneWidget);
+    expect(find.text('暂无模块数据'), findsOneWidget);
+    expect(find.byType(ModuleCard), findsNothing);
+    expect(find.text('LINK —'), findsOneWidget);
 
     tester.view.physicalSize = const Size(1024, 760);
     await tester.binding.setSurfaceSize(const Size(1024, 760));

@@ -17,10 +17,12 @@ class ModsWindow extends StatefulWidget {
   const ModsWindow({
     super.key,
     required this.store,
+    required this.onOpenDemo,
     this.width = L.modsW,
     this.height = L.modsH,
   });
   final Store store;
+  final VoidCallback onOpenDemo;
   final double width;
   final double height;
 
@@ -92,6 +94,29 @@ class _ModsWindowState extends State<ModsWindow> {
       for (final id in _state.order)
         if (byId[id] != null) byId[id]!,
     ];
+
+    if (ordered.isEmpty) {
+      return WindowFrame(
+        width: widget.width,
+        height: widget.height,
+        fill: T.slot,
+        title: S.modules,
+        dimmed: store.dataStale,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(S.noModuleData, style: sans(12, T.text2)),
+              if (!store.isDemo)
+                TextButton(
+                  onPressed: widget.onOpenDemo,
+                  child: const Text(S.openDemoModules),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return WindowFrame(
       width: widget.width,
