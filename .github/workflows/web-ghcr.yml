@@ -2,7 +2,7 @@ name: Deliver Flutter Web image
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'web-nas-v*']
   workflow_dispatch:
     inputs:
       delivery_mode:
@@ -25,10 +25,10 @@ env:
   PUB_HOSTED_URL: https://pub.flutter-io.cn
   NAS_CHANNEL: nas
   DEPLOY_COMPOSE: packaging/docker/docker-compose.ghcr.yml
-  DELIVERY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.delivery_mode || 'push' }}
+  DELIVERY_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.delivery_mode || startsWith(github.ref, 'refs/tags/web-nas-v') && 'publish-nas' || 'push' }}
 
 concurrency:
-  group: web-delivery-${{ inputs.delivery_mode == 'publish-nas' && 'nas' || github.ref }}
+  group: web-delivery-${{ (inputs.delivery_mode == 'publish-nas' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/web-nas-v'))) && 'nas' || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -177,9 +177,10 @@ jobs:
           set -euo pipefail
           version_tag=""
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
-            source_version=$(sed -E 's/-rc\.[0-9]+\+/+/' <<< "${GITHUB_REF_NAME#v}")
+            git_version=${GITHUB_REF_NAME#web-nas-}
+            source_version=$(sed -E 's/-rc\.[0-9]+\+/+/' <<< "${git_version#v}")
             test "$source_version" = "$APP_VERSION"
-            version_tag=${GITHUB_REF_NAME//+/-}
+            version_tag=${git_version//+/-}
             [[ "$version_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?-[0-9]+$ ]]
           fi
           docker push "$WEB_IMAGE" | tee "$RUNNER_TEMP/web-docker-push.log"
@@ -201,7 +202,16 @@ jobs:
         env:
           IMAGE_REPOSITORY: ${{ steps.metadata.outputs.repository }}
           PUBLISHED_DIGEST: ${{ steps.publish.outputs.digest }}
-        run: docker buildx imagetools inspect "$IMAGE_REPOSITORY@$PUBLISHED_DIGEST"
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "$IMAGE_REPOSITORY@$PUBLISHED_DIGEST"
+          if [[ "$DELIVERY_MODE" == publish-nas ]]; then
+            channel_digest=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE_REPOSITORY:$NAS_CHANNEL")
+            if [[ "$channel_digest" != "$PUBLISHED_DIGEST" ]]; then
+              echo "The NAS channel refers to $channel_digest instead of $PUBLISHED_DIGEST." >&2
+              exit 1
+            fi
+          fi
 
       - name: Write checksums and Compose files
         shell: bash

@@ -39,9 +39,9 @@ def read_channel_compose(args):
     if not isinstance(services, dict) or set(services) != {"xy-car-web"}:
         raise ValueError("Register the single Web image as Compose service 'xy-car-web'.")
     web = services["xy-car-web"]
-    image = rf"{re.escape(args.repository)}(?::{re.escape(args.channel)}|@{DIGEST})"
+    image = f"{args.repository}:{args.channel}"
     if (not isinstance(web, dict) or web.keys() & {"build", "env_file", "extends"}
-            or not re.fullmatch(image, str(web.get("image", "")))
+            or web.get("image") != image
             or web.get("platform") != args.platform or web.get("pull_policy") != "always"):
         raise ValueError("Channel Compose must match the image, channel, platform and pull policy.")
     return document
@@ -69,16 +69,15 @@ def write_delivery(args):
         "imageId": args.image_id,
         "sourceRevision": args.commit,
     }
+    if nas:
+        (args.output / "docker-compose.nas.yml").write_text(
+            yaml.safe_dump(compose, sort_keys=False), encoding="utf-8"
+        )
     if published:
         reference = f"{args.repository}@{args.digest}"
         image["reference"] = reference
         compose["services"]["xy-car-web"]["image"] = reference
         (args.output / "docker-compose.yml").write_text(
-            yaml.safe_dump(compose, sort_keys=False), encoding="utf-8"
-        )
-    if nas:
-        compose["services"]["xy-car-web"]["image"] = f"{args.repository}:{args.channel}"
-        (args.output / "docker-compose.nas.yml").write_text(
             yaml.safe_dump(compose, sort_keys=False), encoding="utf-8"
         )
     foundation = json.loads(Path("packaging/ci/shared-packages.lock.json").read_bytes())
