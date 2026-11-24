@@ -7,6 +7,7 @@ class Envelope {
     required this.ts,
     required this.seq,
     required this.payload,
+    this.version,
     this.cmd,
     this.id,
     this.ok,
@@ -14,6 +15,7 @@ class Envelope {
   });
 
   final String type;
+  final int? version;
   final String? topic;
   final int ts;
   final int seq;
@@ -24,26 +26,27 @@ class Envelope {
   final String? error;
 
   static Envelope? parse(String raw) {
-    Object? decoded;
     try {
-      decoded = jsonDecode(raw);
-    } catch (_) {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return null;
+      final type = decoded['type'];
+      if (type is! String) return null;
+      return Envelope(
+        type: type,
+        version: decoded['v'] as int?,
+        topic: decoded['topic'] as String?,
+        ts: (decoded['ts'] as num?)?.toInt() ?? 0,
+        seq: (decoded['seq'] as num?)?.toInt() ?? 0,
+        payload: (decoded['payload'] as Map<String, dynamic>?) ?? const {},
+        cmd: decoded['cmd'] as String?,
+        id: decoded['id'] as String?,
+        ok: decoded['ok'] as bool?,
+        error: decoded['error'] as String?,
+      );
+    } on FormatException {
+      return null;
+    } on TypeError {
       return null;
     }
-    if (decoded is! Map) return null;
-    final m = decoded.cast<String, dynamic>();
-    final t = m['type'];
-    if (t is! String) return null;
-    return Envelope(
-      type: t,
-      topic: m['topic'] as String?,
-      ts: (m['ts'] as num?)?.toInt() ?? 0,
-      seq: (m['seq'] as num?)?.toInt() ?? 0,
-      payload: (m['payload'] as Map?)?.cast<String, dynamic>() ?? const {},
-      cmd: m['cmd'] as String?,
-      id: m['id'] as String?,
-      ok: m['ok'] as bool?,
-      error: m['error'] as String?,
-    );
   }
 }

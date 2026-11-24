@@ -108,7 +108,7 @@ class _ConnectDialogState extends State<ConnectDialog> {
                   decoration: const InputDecoration(
                     isDense: true,
                     border: InputBorder.none,
-                    hintText: 'ws://127.0.0.1:9999/ws',
+                    hintText: Store.defaultEndpoint,
                   ),
                 ),
               ),

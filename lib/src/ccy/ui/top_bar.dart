@@ -153,7 +153,7 @@ class _TopBarState extends State<TopBar> {
                     context: context,
                     builder: (_) => ConnectDialog(store: s),
                   ),
-                  child: _linkChip(linked, s.dataStale),
+                  child: _linkChip(linked),
                 ),
                 const SizedBox(width: 8),
                 _clock(
@@ -198,10 +198,10 @@ class _TopBarState extends State<TopBar> {
     );
   }
 
-  /// LINK 胶囊：连着是绿框半透绿，断了是红框半透红
-  Widget _linkChip(bool linked, bool stale) {
-    final tint = !linked ? T.danger : (stale ? T.warn : T.ok);
-    final text = linked ? 'LINK ${widget.store.rttMs}' : 'LINK —';
+  Widget _linkChip(bool linked) {
+    final rttMs = linked ? widget.store.rttMs : null;
+    final tint = !linked ? T.danger : (rttMs == null ? T.warn : T.ok);
+    final text = rttMs == null ? 'LINK —' : 'LINK $rttMs ms';
     return _chip(
       tint: tint,
       child: Row(

@@ -30,6 +30,7 @@ dependencies:
   remote_update:
     path: ../app-foundation/legacy_packages/remote_update
   shared_preferences: ^2.5.3
+  web_socket_channel: ^3.0.3
   win32_registry: ^2.1.0
 
 dev_dependencies:

@@ -211,6 +211,7 @@ class _GenBarState extends State<GenBar> {
   Widget _now() {
     final s = widget.store;
     final sel = s.selected;
+    final rttMs = s.link == Link.connected ? s.rttMs : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -226,7 +227,7 @@ class _GenBarState extends State<GenBar> {
             _kv('TX', s.txCount.toString()),
             _kv('SEQ GAPS', s.seqGaps.toString()),
             _kv('PENDING', s.pending.length.toString()),
-            _kv('RTT', '${s.rttMs}ms'),
+            _kv('RTT', rttMs == null ? '—' : '$rttMs ms'),
           ],
         ),
       ],

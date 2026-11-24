@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'app_shell.dart';
 import 'data/demo_transport.dart';
 import 'data/store.dart';
+import 'data/web_socket_transport.dart';
 import 'theme/tokens.dart';
 
 // The reference canvas is clipped below 1280 logical pixels.
@@ -25,8 +26,12 @@ class _CcyPreviewState extends State<CcyPreview> {
   @override
   void initState() {
     super.initState();
-    _store = Store(newTransport: DemoTransport.new);
-    unawaited(_store.connect());
+    const isDemo = bool.fromEnvironment('XY_CAR_CCY_DEMO');
+    _store = Store(
+      newTransport: isDemo ? DemoTransport.new : WebSocketTransport.new,
+      isDemo: isDemo,
+    );
+    if (isDemo) unawaited(_store.connect());
   }
 
   @override

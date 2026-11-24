@@ -14,7 +14,9 @@ flutter test
 
 开发运行默认使用进程内的测试服务，账号和密码均为 `demo`。正式构建默认使用现有 `xy_car_app` 账号服务。可用 `--dart-define=XY_CAR_LIVE_ACCOUNT=true` 在开发时连接正式服务，或设为 `false` 在 Release 构建中使用测试服务。
 
-Web 窗口宽度达到 1280 逻辑像素时，可在「系统设置 → 宽屏主题」选择 CCY。该主题沿用 CCY 原工程 `09d8f7d` 的界面与素材，游戏和监控模式使用本地演示数据。点击 CCY 底栏的「设置」可切回经典主题。
+Web 窗口宽度达到 1280 逻辑像素时，可在「系统设置 → 宽屏主题」选择 CCY。打开顶栏 `LINK`，输入 `ws://<RDK_IP>:9090/ws` 后连接。顶栏显示 WebSocket 往返延迟，尚未收到有效探测回包或断开时显示 `LINK —`。通过 HTTPS 托管时使用网关的 `wss://` 代理地址。
+
+可用 `flutter run -d chrome --dart-define=XY_CAR_CCY_DEMO=true` 打开原有本地驾驶舱演示。点击 CCY 底栏的「设置」可切回经典主题。
 
 ## 正式环境
 

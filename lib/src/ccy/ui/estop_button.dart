@@ -71,17 +71,18 @@ class _EStopButtonState extends State<EStopButton> {
   @override
   Widget build(BuildContext context) {
     final s = widget.store;
+    final enabled = s.canSendVehicleCommands;
     final latched = s.motion.estop;
     final pending = s.isPending('estop') || s.isPending('clear_estop');
     final base = latched ? T.warn : T.danger;
     final bg = pending ? base.withValues(alpha: 0.45) : base;
 
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       child: Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (e) {
-          if (pending) return;
+          if (!enabled || pending) return;
           if (!latched) {
             s.eStop();
             setState(() {});
@@ -104,7 +105,7 @@ class _EStopButtonState extends State<EStopButton> {
           if (_hold) _cancelHold();
         },
         child: Opacity(
-          opacity: pending ? 0.55 : 1,
+          opacity: !enabled || pending ? 0.55 : 1,
           child: SizedBox(
             width: 186,
             height: 48,
@@ -112,7 +113,7 @@ class _EStopButtonState extends State<EStopButton> {
               painter: _EStopSkin(bg: bg, progress: _hold ? _progress : 0),
               child: Center(
                 child: Text(
-                  latched ? '解除急停·按住' : '急停',
+                  !enabled ? '急停未接入' : (latched ? '解除急停·按住' : '急停'),
                   style: sans(14, T.onAccent, w: FontWeight.w700, ls: 1.2),
                 ),
               ),

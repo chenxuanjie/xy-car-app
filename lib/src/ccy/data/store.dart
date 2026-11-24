@@ -44,15 +44,21 @@ class Store extends ChangeNotifier {
     List<String>? recent,
     this.onUrlUsed,
     required Transport Function() newTransport,
+    this.isDemo = false,
   }) : recentUrls = recent ?? <String>[],
        _newTransport = newTransport;
+
+  static const defaultEndpoint = 'ws://127.0.0.1:9090/ws';
+  static const _probeInterval = Duration(seconds: 1);
+  static const _probeTimeout = Duration(seconds: 3);
+  static const _protocolVersion = 1;
 
   final void Function(String url)? onUrlUsed;
   final List<String> recentUrls;
   final Transport Function() _newTransport;
+  final bool isDemo;
 
-  String endpoint = 'ws://127.0.0.1:9999/ws';
-  bool _manualClose = false;
+  String endpoint = defaultEndpoint;
 
   Link link = Link.disconnected;
   String? linkError;
@@ -86,7 +92,8 @@ class Store extends ChangeNotifier {
       ? 999999
       : DateTime.now().difference(lastModulesAt!).inMilliseconds;
 
-  int get rttMs => linkState.rttMs;
+  int? get rttMs => isDemo ? linkState.rttMs : _rttMs;
+  bool get canSendVehicleCommands => isDemo && link == Link.connected;
   double get loss => linkState.loss;
 
   ModuleVm? get selected {
@@ -97,9 +104,14 @@ class Store extends ChangeNotifier {
   }
 
   Transport? _t;
-  StreamSubscription<dynamic>? _sub;
+  StreamSubscription<String>? _sub;
   Timer? _retry;
   Timer? _ticker;
+  Timer? _probeTimer;
+  Timer? _probeDeadline;
+  Stopwatch? _activeProbe;
+  int _probeSequence = 0;
+  int? _rttMs;
   int _cmdSeq = 0;
   bool _disposed = false;
   final Map<String, int> _lastSeq = {};
@@ -140,21 +152,21 @@ class Store extends ChangeNotifier {
   }
 
   Future<void> connect([String? url]) async {
-    if (url != null) endpoint = url;
-    if (link == Link.connecting) return;
+    if (_disposed || (link == Link.connecting && url == null)) return;
+    endpoint = url ?? endpoint;
     _retry?.cancel();
-    _manualClose = false;
+    _closeTransport();
+    final t = _newTransport();
+    _t = t;
     link = Link.connecting;
     linkError = null;
+    dataStale = true;
+    lastTelemetryAt = null;
+    _lastSeq.clear();
     notifyListeners();
     try {
-      final t = _newTransport();
       await t.open(Uri.parse(endpoint));
-      if (_disposed || _manualClose) {
-        await t.close();
-        return;
-      }
-      _t = t;
+      if (!identical(_t, t)) return;
       link = Link.connected;
       recentUrls.remove(endpoint);
       recentUrls.insert(0, endpoint);
@@ -162,51 +174,44 @@ class Store extends ChangeNotifier {
       onUrlUsed?.call(endpoint);
       log('SYS', 'connected $endpoint');
       _sub = t.stream.listen(
-        _onRaw,
-        onDone: _onClosed,
+        (message) {
+          if (identical(_t, t)) _onRaw(message);
+        },
+        onDone: () => _onClosed(t),
         onError: (Object e) {
+          if (!identical(_t, t)) return;
           linkError = e.toString();
-          _onClosed();
+          _onClosed(t);
         },
       );
       _startTicker();
+      if (!isDemo) {
+        _probeTimer = Timer.periodic(_probeInterval, (_) => _sendProbe(t));
+        _sendProbe(t);
+      }
     } catch (e) {
-      link = Link.disconnected;
+      if (!identical(_t, t)) return;
       linkError = e.toString();
       log('ERR', 'connect failed: $e', bad: true);
-      _scheduleRetry();
+      _onClosed(t);
+      return;
     }
     notifyListeners();
   }
 
   /// 用户主动断开：不回退重连
   void disconnect() {
-    _manualClose = true;
     _retry?.cancel();
-    _sub?.cancel();
-    _sub = null;
-    _t?.close();
-    _t = null;
+    _closeTransport();
     link = Link.disconnected;
     dataStale = true;
     log('SYS', 'disconnected by user');
     notifyListeners();
   }
 
-  void _onClosed() {
-    if (_disposed) return;
-    if (_manualClose) {
-      _manualClose = false;
-      _sub = null;
-      _t = null;
-      link = Link.disconnected;
-      dataStale = true;
-      notifyListeners();
-      return;
-    }
-    _sub?.cancel();
-    _sub = null;
-    _t = null;
+  void _onClosed(Transport transport) {
+    if (!identical(_t, transport)) return;
+    _closeTransport();
     if (link != Link.disconnected) log('SYS', 'link closed', bad: true);
     link = Link.disconnected;
     dataStale = true;
@@ -215,6 +220,60 @@ class Store extends ChangeNotifier {
     }
     notifyListeners();
     _scheduleRetry();
+  }
+
+  void _closeTransport() {
+    final transport = _t;
+    _t = null;
+    _sub?.cancel().ignore();
+    _sub = null;
+    transport?.close().ignore();
+    _probeTimer?.cancel();
+    _probeDeadline?.cancel();
+    _activeProbe = null;
+    _rttMs = null;
+  }
+
+  String get _probeId => 'rtt-$_probeSequence';
+
+  void _sendProbe(Transport transport) {
+    if (!identical(_t, transport) || _activeProbe != null) return;
+    _probeSequence++;
+    _activeProbe = Stopwatch()..start();
+    _probeDeadline = Timer(_probeTimeout, () => _probeTimedOut(transport));
+    try {
+      transport.send(
+        jsonEncode({'v': _protocolVersion, 'type': 'ping', 'id': _probeId}),
+      );
+      txCount++;
+    } on StateError catch (error) {
+      linkError = error.message;
+      _onClosed(transport);
+    }
+  }
+
+  void _probeTimedOut(Transport transport) {
+    if (!identical(_t, transport)) return;
+    linkError = '网关未回应延迟探测';
+    _onClosed(transport);
+  }
+
+  void _acceptPong(Envelope envelope) {
+    final probe = _activeProbe;
+    if (probe == null ||
+        envelope.version != _protocolVersion ||
+        envelope.id != _probeId) {
+      return;
+    }
+    probe.stop();
+    if (probe.elapsed >= _probeTimeout) {
+      _probeTimedOut(_t!);
+      return;
+    }
+    _probeDeadline?.cancel();
+    _activeProbe = null;
+    _rttMs = (probe.elapsedMicroseconds / 1000).round();
+    notifyListeners();
   }
 
   void _scheduleRetry() {
@@ -256,10 +315,7 @@ class Store extends ChangeNotifier {
     bool logTx = true,
   }) {
     final t = _t;
-    if (t == null || link != Link.connected) {
-      log('ERR', 'not connected, drop $cmd', bad: true);
-      return null;
-    }
+    if (t == null || !canSendVehicleCommands) return null;
     _cmdSeq++;
     final id = 'c-$_cmdSeq';
     if (track) {
@@ -296,12 +352,16 @@ class Store extends ChangeNotifier {
   void eStop() => send('estop', const {});
   void clearEStop() => send('clear_estop', const {});
 
-  void _onRaw(dynamic raw) {
+  void _onRaw(String raw) {
     rxCount++;
     lastRxAt = DateTime.now();
-    final e = Envelope.parse(raw as String);
+    final e = Envelope.parse(raw);
     if (e == null) {
       log('ERR', 'bad frame', bad: true);
+      return;
+    }
+    if (e.type == 'pong') {
+      _acceptPong(e);
       return;
     }
     final topic = e.topic;
@@ -385,8 +445,7 @@ class Store extends ChangeNotifier {
     _disposed = true;
     _retry?.cancel();
     _ticker?.cancel();
-    _sub?.cancel();
-    _t?.close();
+    _closeTransport();
     super.dispose();
   }
 }
