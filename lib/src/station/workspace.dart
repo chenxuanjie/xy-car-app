@@ -6,6 +6,7 @@ class _Workspace extends StatelessWidget {
     required this.mobile,
     required this.compact,
     required this.camera,
+    required this.video,
     required this.adding,
     required this.waypoints,
     required this.onSelectView,
@@ -18,6 +19,7 @@ class _Workspace extends StatelessWidget {
 
   final _Translate tr;
   final bool mobile, compact, camera, adding;
+  final Widget video;
   final List<Offset> waypoints;
   final ValueChanged<bool> onSelectView, onChangeMode;
   final ValueChanged<Offset> onAdd;
@@ -30,20 +32,7 @@ class _Workspace extends StatelessWidget {
       return Stack(
         fit: StackFit.expand,
         children: [
-          const ColoredBox(color: Colors.black),
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const _StationIcon(_StationGlyph.video, color: _dim, size: 36),
-                const SizedBox(height: 10),
-                Text(
-                  tr('无信号输入', 'NO SIGNAL'),
-                  style: const TextStyle(color: _muted, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
+          video,
           if (!mobile) Positioned(top: 16, left: 16, child: _views()),
         ],
       );

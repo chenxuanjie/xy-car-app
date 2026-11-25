@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../app_modules.dart' show localized;
 import '../ccy/data/store.dart';
+import 'vehicle_connections.dart';
 import 'wifi_profiles.dart';
 
 class WifiPage extends StatefulWidget {
@@ -30,6 +31,7 @@ class _WifiPageState extends State<WifiPage> {
   static const _apHost = '192.168.88.1';
   static const _pollInterval = Duration(seconds: 1);
   final _form = GlobalKey<FormState>();
+  final _hotspotForm = GlobalKey<FormState>();
   final _sta = TextEditingController();
   final _ap = TextEditingController();
   final _staPassword = TextEditingController();
@@ -183,7 +185,7 @@ class _WifiPageState extends State<WifiPage> {
   }
 
   void _save() {
-    if (!_form.currentState!.validate()) return;
+    if (!_validateFullConfiguration()) return;
     final account = _account!;
     final vehicle = _vehicle!;
     unawaited(
@@ -229,17 +231,34 @@ class _WifiPageState extends State<WifiPage> {
     );
   }
 
-  void _apply() {
-    if (!_form.currentState!.validate()) return;
-    Map<String, String> access(String ssid, String password) => {
-      'ssid': ssid,
-      if (password.isNotEmpty) 'password': password,
-    };
-    final payload = <String, Object?>{
+  bool _validateFullConfiguration() {
+    final full = _form.currentState!.validate();
+    final hotspot =
+        _mode == 'sta' && _ap.text.isEmpty ||
+        _hotspotForm.currentState!.validate();
+    return full && hotspot;
+  }
+
+  Map<String, String> _access(String ssid, String password) => {
+    'ssid': ssid,
+    if (password.isNotEmpty) 'password': password,
+  };
+
+  void _applyHotspot() {
+    if (!_hotspotForm.currentState!.validate()) return;
+    _applyRequest({'ap': _access(_ap.text, _apPassword.text)});
+  }
+
+  void _applyFullConfiguration() {
+    if (!_validateFullConfiguration()) return;
+    _applyRequest({
       'mode': _mode,
-      if (_sta.text.isNotEmpty) 'sta': access(_sta.text, _staPassword.text),
-      if (_ap.text.isNotEmpty) 'ap': access(_ap.text, _apPassword.text),
-    };
+      if (_sta.text.isNotEmpty) 'sta': _access(_sta.text, _staPassword.text),
+      if (_ap.text.isNotEmpty) 'ap': _access(_ap.text, _apPassword.text),
+    });
+  }
+
+  void _applyRequest(Map<String, Object?> payload) {
     unawaited(
       _run((generation) async {
         final result = await widget.link.requestWifi('apply', payload);
@@ -251,8 +270,8 @@ class _WifiPageState extends State<WifiPage> {
           setState(() {
             _pendingOperation = operation;
             _message = tr('车辆已接收配置', 'Vehicle accepted the request');
-            _staPassword.clear();
-            _apPassword.clear();
+            if (payload.containsKey('sta')) _staPassword.clear();
+            if (payload.containsKey('ap')) _apPassword.clear();
           });
         }
         await _refresh();
@@ -347,6 +366,36 @@ class _WifiPageState extends State<WifiPage> {
     };
   }
 
+  Widget _appLink() => ListenableBuilder(
+    listenable: widget.link,
+    builder: (context, _) {
+      final target = widget.link.activeTarget;
+      if (target == null) return const SizedBox.shrink();
+      final host = target.endpoint.host;
+      final viaHotspot = host == _apHost || host == _network('ap')['ip'];
+      final route = viaHotspot
+          ? tr('车端热点', 'Vehicle hotspot')
+          : target.route == VehicleRoute.remote
+          ? tr('外网 FRP', 'Remote FRP')
+          : tr('局域网', 'LAN');
+      final rtt = widget.link.rttMs;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            [
+              tr('App 当前连接', 'App connection'),
+              route,
+              if (rtt != null) '$rtt ms',
+            ].join(' · '),
+          ),
+          SelectableText(target.endpoint.toString()),
+          const SizedBox(height: 8),
+        ],
+      );
+    },
+  );
+
   String _statusLabel() => switch (_linkState) {
     Link.disconnected => tr('车辆未连接', 'Vehicle disconnected'),
     Link.connecting => tr('正在连接车辆', 'Connecting to vehicle'),
@@ -400,6 +449,14 @@ class _WifiPageState extends State<WifiPage> {
       'STA did not connect and obtain an IP',
     ),
     'ap0_activation_failed' => tr('热点启动失败', 'Hotspot failed to start'),
+    'sta_channel_unavailable' || 'unsupported_sta_channel' => tr(
+      '无法读取可用的 STA 信道，热点配置未应用',
+      'Could not determine a usable STA channel. Hotspot settings were not applied.',
+    ),
+    'sta_connection_changed' => tr(
+      '检测到 STA 连接变化，已撤销热点修改',
+      'The STA connection changed. Hotspot settings were rolled back.',
+    ),
     'profile_storage_failed' => tr(
       '个人配置存储失败',
       'Personal profile could not be stored',
@@ -411,6 +468,77 @@ class _WifiPageState extends State<WifiPage> {
     _ => error,
   };
 
+  Widget _fullConfiguration({
+    required bool canApply,
+    required bool canSave,
+  }) => ExpansionTile(
+    tilePadding: EdgeInsets.zero,
+    childrenPadding: const EdgeInsets.only(bottom: 8),
+    title: Text(
+      tr('整车网络配置与个人预设', 'Full network settings and personal profile'),
+    ),
+    children: [
+      Form(
+        key: _form,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_account == null)
+              Text(tr('登录后可保存个人配置', 'Sign in to save a personal profile')),
+            DropdownButtonFormField<String>(
+              key: ValueKey(_mode),
+              initialValue: _mode,
+              decoration: InputDecoration(labelText: tr('模式', 'Mode')),
+              items: [
+                for (final mode in const ['sta_ap', 'sta', 'ap'])
+                  DropdownMenuItem(value: mode, child: Text(_modeLabel(mode))),
+              ],
+              onChanged: _busy
+                  ? null
+                  : (value) => setState(() => _mode = value!),
+            ),
+            const SizedBox(height: 16),
+            _networkFields(
+              tr('上行 Wi-Fi（STA）', 'Uplink Wi-Fi (STA)'),
+              _sta,
+              _staPassword,
+              _mode != 'ap',
+            ),
+            if (WifiProfiles.canRememberPasswords && _account != null)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _remember,
+                title: Text(tr('在本机记住密码', 'Remember passwords on this device')),
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() => _remember = value),
+              ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                OutlinedButton(
+                  onPressed: canSave ? _save : null,
+                  child: Text(tr('保存到我的配置', 'Save my profile')),
+                ),
+                if (WifiProfiles.canRememberPasswords && canSave)
+                  TextButton(
+                    onPressed: _loadPasswords,
+                    child: Text(tr('填入我的密码', 'Use my saved passwords')),
+                  ),
+                OutlinedButton(
+                  onPressed: canApply ? _applyFullConfiguration : null,
+                  child: Text(tr('应用整车配置', 'Apply full configuration')),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     final canSave = !_busy && _account != null && _vehicle != null;
@@ -419,6 +547,9 @@ class _WifiPageState extends State<WifiPage> {
     final waiting = const {'applying', 'confirm', 'finishing'}.contains(phase);
     final pending =
         _pendingOperation != null && _operation['id'] == _pendingOperation;
+    final canApply = !_busy && !waiting && _status != null;
+    final hotspotRunning = _network('ap')['connected'] == true;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Wi-Fi')),
       body: Center(
@@ -426,156 +557,112 @@ class _WifiPageState extends State<WifiPage> {
           constraints: const BoxConstraints(maxWidth: 660),
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
-            child: Form(
-              key: _form,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  tr('车辆当前配置', 'Vehicle configuration'),
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                _appLink(),
+                if (_status == null) ...[
+                  Text(_statusLabel()),
+                  if (_statusError case final String statusError)
+                    Text(_errorLabel(statusError)),
+                ] else ...[
                   Text(
-                    tr('车辆当前配置', 'Vehicle configuration'),
-                    style: Theme.of(context).textTheme.titleLarge,
+                    '${tr('车辆配置模式', 'Configured mode')} · '
+                    '${_modeLabel(_status?['mode'])}',
                   ),
-                  const SizedBox(height: 8),
-                  if (_status == null) ...[
-                    Text(_statusLabel()),
-                    if (_statusError case final String statusError)
-                      Text(_errorLabel(statusError)),
-                  ] else ...[
-                    Text(
-                      '${tr('车辆配置模式', 'Configured mode')} · '
-                      '${_modeLabel(_status?['mode'])}',
-                    ),
-                    Text('STA · ${_networkLabel('sta')}'),
-                    Text('AP · ${_networkLabel('ap')}'),
-                  ],
-                  if (_status?['frpc_state'] case final String state)
-                    Text(
-                      tr(
-                        'FRP 服务 · ${_frpcLabel(state)}',
-                        'FRP service · ${_frpcLabel(state)}',
-                      ),
-                    ),
-                  if (phase != null) Text(_phaseLabel(phase)),
-                  if (widget.link.link != Link.connected) ...[
-                    TextField(
-                      controller: _endpoint,
-                      decoration: InputDecoration(
-                        labelText: tr(
-                          '车辆 WebSocket 地址',
-                          'Vehicle WebSocket address',
-                        ),
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: _reconnect,
-                        child: Text(tr('连接车辆', 'Connect to vehicle')),
-                      ),
-                    ),
-                  ],
-                  const Divider(height: 32),
+                  Text('STA · ${_networkLabel('sta')}'),
+                  Text('AP · ${_networkLabel('ap')}'),
+                ],
+                if (_status?['frpc_state'] case final String state)
                   Text(
-                    tr('我的 Wi-Fi 配置', 'My Wi-Fi profile'),
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  if (_account == null)
-                    Text(
-                      tr('登录后可保存个人配置', 'Sign in to save a personal profile'),
+                    tr(
+                      'FRP 服务 · ${_frpcLabel(state)}',
+                      'FRP service · ${_frpcLabel(state)}',
                     ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(_mode),
-                    initialValue: _mode,
-                    decoration: InputDecoration(labelText: tr('模式', 'Mode')),
-                    items: [
-                      const DropdownMenuItem(
-                        value: 'sta_ap',
-                        child: Text('STA + AP'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'sta',
-                        child: Text(tr('仅 STA', 'STA only')),
-                      ),
-                      DropdownMenuItem(
-                        value: 'ap',
-                        child: Text(tr('仅 AP', 'AP only')),
-                      ),
-                    ],
-                    onChanged: _busy
-                        ? null
-                        : (value) => setState(() => _mode = value!),
                   ),
-                  const SizedBox(height: 16),
-                  _networkFields(
-                    tr('上行 Wi-Fi（STA）', 'Uplink Wi-Fi (STA)'),
-                    _sta,
-                    _staPassword,
-                    _mode != 'ap',
+                if (_linkState != Link.connected) ...[
+                  TextField(
+                    controller: _endpoint,
+                    decoration: InputDecoration(
+                      labelText: tr(
+                        '车辆 WebSocket 地址',
+                        'Vehicle WebSocket address',
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 16),
-                  _networkFields(
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: _linkState == Link.connecting
+                          ? null
+                          : _reconnect,
+                      child: Text(tr('连接车辆', 'Connect to vehicle')),
+                    ),
+                  ),
+                ],
+                const Divider(height: 32),
+                Form(
+                  key: _hotspotForm,
+                  child: _networkFields(
                     tr('车端热点（AP）', 'Vehicle hotspot (AP)'),
                     _ap,
                     _apPassword,
-                    _mode != 'sta',
+                    true,
                   ),
-                  if (WifiProfiles.canRememberPasswords && _account != null)
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _remember,
-                      title: Text(
-                        tr('在本机记住密码', 'Remember passwords on this device'),
-                      ),
-                      onChanged: _busy
-                          ? null
-                          : (value) => setState(() => _remember = value),
-                    ),
-                  const SizedBox(height: 20),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    children: [
-                      OutlinedButton(
-                        onPressed: canSave ? _save : null,
-                        child: Text(tr('保存到我的配置', 'Save my profile')),
-                      ),
-                      if (WifiProfiles.canRememberPasswords && canSave)
-                        TextButton(
-                          onPressed: _loadPasswords,
-                          child: Text(tr('填入我的密码', 'Use my saved passwords')),
-                        ),
-                      FilledButton(
-                        onPressed: !_busy && !waiting && _status != null
-                            ? _apply
-                            : null,
-                        child: Text(tr('应用到车辆', 'Apply to vehicle')),
-                      ),
-                      if (phase == 'confirm' && pending)
-                        FilledButton(
-                          onPressed: _busy ? null : _confirm,
-                          child: Text(tr('确认并保留', 'Confirm and keep')),
-                        ),
-                    ],
-                  ),
-                  if (_busy) const LinearProgressIndicator(),
-                  if (_message != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(_message!),
-                    ),
-                  if (error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton(
+                      onPressed: canApply ? _applyHotspot : null,
                       child: Text(
-                        _errorLabel(error),
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
+                        hotspotRunning
+                            ? tr('更新热点', 'Update hotspot')
+                            : tr('开启热点', 'Enable hotspot'),
                       ),
                     ),
-                ],
-              ),
+                    if (phase == 'confirm' && pending)
+                      FilledButton(
+                        onPressed: _busy ? null : _confirm,
+                        child: Text(tr('确认并保留', 'Confirm and keep')),
+                      ),
+                  ],
+                ),
+                if (_busy)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: LinearProgressIndicator(),
+                  ),
+                if (phase != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(_phaseLabel(phase)),
+                  ),
+                if (_message case final message?)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(message),
+                  ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      _errorLabel(error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                _fullConfiguration(canApply: canApply, canSave: canSave),
+              ],
             ),
           ),
         ),

@@ -14,11 +14,15 @@ class CcyPreview extends StatefulWidget {
   const CcyPreview({
     super.key,
     required this.store,
+    required this.video,
+    required this.onStationSettings,
     required this.onThemeSettings,
     required this.onVehicleSettings,
   });
 
   final Store store;
+  final Widget video;
+  final VoidCallback onStationSettings;
   final VoidCallback onThemeSettings;
   final VoidCallback onVehicleSettings;
 
@@ -65,6 +69,8 @@ class _CcyPreviewState extends State<CcyPreview> {
     child: Scaffold(
       body: AppShell(
         store: _demoStore ?? widget.store,
+        video: widget.video,
+        onStationSettings: widget.onStationSettings,
         onThemeSettings: widget.onThemeSettings,
         onVehicleSettings: widget.onVehicleSettings,
         onToggleDemo: _toggleDemo,

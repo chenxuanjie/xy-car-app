@@ -16,6 +16,8 @@ class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
     required this.store,
+    required this.video,
+    required this.onStationSettings,
     required this.onThemeSettings,
     required this.onVehicleSettings,
     required this.onToggleDemo,
@@ -23,6 +25,8 @@ class AppShell extends StatefulWidget {
     this.demoMode = 'play',
   });
   final Store store;
+  final Widget video;
+  final VoidCallback onStationSettings;
   final VoidCallback onThemeSettings;
   final VoidCallback onVehicleSettings;
   final VoidCallback onToggleDemo;
@@ -219,6 +223,7 @@ class _AppShellState extends State<AppShell> {
 
   /// play：整窗背景。cover 铺满，永远没有黑边
   Widget _backdrop() {
+    if (!widget.store.isDemo) return widget.video;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -267,34 +272,36 @@ class _AppShellState extends State<AppShell> {
       width: cellW,
       height: cellH,
       child: ClipRect(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: Image.asset(
-                'assets/ccy/img/feed.jpg',
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.low,
+        child: !widget.store.isDemo
+            ? widget.video
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    child: Image.asset(
+                      'assets/ccy/img/feed.jpg',
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.low,
+                    ),
+                  ),
+                  Image.asset(
+                    'assets/ccy/img/feed.jpg',
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.medium,
+                  ),
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        center: Alignment(0, -0.04),
+                        radius: 1.24,
+                        colors: [Color(0x0005080B), Color(0x3D05080B)],
+                        stops: [0.46, 1.0],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            Image.asset(
-              'assets/ccy/img/feed.jpg',
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.medium,
-            ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment(0, -0.04),
-                  radius: 1.24,
-                  colors: [Color(0x0005080B), Color(0x3D05080B)],
-                  stops: [0.46, 1.0],
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -321,7 +328,7 @@ class _AppShellState extends State<AppShell> {
       h = genH;
       content = GenBar(
         store: store,
-        onThemeSettings: widget.onThemeSettings,
+        onSettings: widget.onStationSettings,
         size: Size(genW, genH),
         onResize: (sz, topShift) => setState(() {
           _genTouched = true;
@@ -412,7 +419,7 @@ class _AppShellState extends State<AppShell> {
         bottom: L.monGenBottom,
         child: GenBar(
           store: store,
-          onThemeSettings: widget.onThemeSettings,
+          onSettings: widget.onStationSettings,
           size: Size(genW, genH),
           onResize: (sz, _) =>
               setState(() => _genSize = Size(_genSize.width, sz.height)),

@@ -68,8 +68,9 @@ class Store extends ChangeNotifier {
   final bool isDemo;
 
   Link link = Link.disconnected;
-  VehicleRoute? get activeRoute =>
-      link == Link.connected && !isDemo ? _routes[_routeIndex].route : null;
+  VehicleRouteTarget? get activeTarget =>
+      link == Link.connected && !isDemo ? _routes[_routeIndex] : null;
+  VehicleRoute? get activeRoute => activeTarget?.route;
   String? linkError;
   bool dataStale = true;
 

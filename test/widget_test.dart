@@ -18,6 +18,31 @@ import 'package:xy_car_app/src/ccy/ui/module_card.dart';
 import 'package:xy_car_app/src/station/vehicle_connections.dart';
 
 void main() {
+  testWidgets('video settings save the selected resolution and frame rate', (
+    tester,
+  ) async {
+    final modules = await start(tester, const Size(390, 844));
+    await tap(tester, find.byTooltip('系统设置'));
+    final row = find.byKey(const ValueKey(videoProfilePreference));
+    final selector = find.descendant(
+      of: row,
+      matching: find.byType(DropdownButton<String>),
+    );
+    expect(tester.widget<DropdownButton<String>>(selector).value, '720p');
+
+    await tap(tester, selector);
+    expect(find.text('480p / 15 fps'), findsOneWidget);
+    expect(find.text('1080p / 30 fps'), findsOneWidget);
+    await tap(tester, find.text('1080p / 30 fps'));
+    expect(tester.widget<DropdownButton<String>>(selector).value, '1080p');
+    expect(modules.settings.preferences.values[videoProfilePreference], '1080p');
+    final storage = await SharedPreferences.getInstance();
+    expect(
+      jsonDecode(storage.getString('xy_car_app.settings')!)[videoProfilePreference],
+      '1080p',
+    );
+  });
+
   testWidgets(
     'desktop keeps the offline station and opens the Foundation settings',
     (tester) async {
@@ -365,6 +390,7 @@ void main() {
     expect(find.text('车辆配置模式 · STA + AP'), findsOneWidget);
     expect(find.text('STA · 已连接 · router · 192.168.1.20'), findsOneWidget);
     expect(find.text('AP · 未开启'), findsOneWidget);
+    expect(find.textContaining('App 当前连接 · 车端热点'), findsOneWidget);
 
     transport = second;
     first.drop();
@@ -386,6 +412,71 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('车辆配置模式 · 仅 AP'), findsOneWidget);
     expect(find.text('AP · 已开启 · car · 192.168.88.1'), findsOneWidget);
+  });
+
+  testWidgets('enabling the hotspot sends only AP credentials over the LAN', (
+    tester,
+  ) async {
+    final transport = _ProbeTransport();
+    await start(
+      tester,
+      const Size(1280, 720),
+      newVehicleTransport: () => transport,
+    );
+    await tap(tester, find.byTooltip('系统设置'));
+    await tap(tester, find.text('Wi-Fi'));
+    const endpoint = 'ws://192.168.1.20:9090/ws';
+    await tester.enterText(find.byType(TextField).first, endpoint);
+    await tester.tap(find.text('连接车辆'));
+    await tester.pump();
+    transport.reply();
+    const sta = {'connected': true, 'ssid': 'router', 'ip': '192.168.1.20'};
+    transport.replyWifi(
+      status: {
+        'vehicle_id': 'car',
+        'mode': 'sta',
+        'sta': sta,
+        'ap': {'connected': false},
+      },
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('App 当前连接 · 局域网'), findsOneWidget);
+    expect(
+      tester.widget<SelectableText>(find.byType(SelectableText)).data,
+      endpoint,
+    );
+    expect(find.text('STA · 已连接 · router · 192.168.1.20'), findsOneWidget);
+    expect(find.byType(TextFormField), findsNWidgets(2));
+    await tester.enterText(find.byType(TextFormField).at(0), 'car-hotspot');
+    await tester.enterText(
+      find.byType(TextFormField).at(1),
+      'test-hotspot-pass',
+    );
+    await tester.tap(find.text('开启热点'));
+    await tester.pump();
+    expect(transport.wifiApplyPayload, {
+      'ap': {'ssid': 'car-hotspot', 'password': 'test-hotspot-pass'},
+    });
+    transport.replyWifi(
+      status: {'operation_id': 'hotspot-1'},
+      command: 'apply',
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+    transport.replyWifi(
+      status: {
+        'vehicle_id': 'car',
+        'mode': 'sta_ap',
+        'sta': sta,
+        'ap': {'connected': true, 'ssid': 'car-hotspot', 'ip': '192.168.88.1'},
+        'operation': {'id': 'hotspot-1', 'phase': 'confirm'},
+      },
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('确认并保留'), findsOneWidget);
+    expect(find.text('STA · 已连接 · router · 192.168.1.20'), findsOneWidget);
+    expect(find.text('AP · 已开启 · car-hotspot · 192.168.88.1'), findsOneWidget);
+    expect(transport.closeCount, 0);
   });
 
   testWidgets('the account page uses the existing scoped station protocol', (
@@ -642,8 +733,9 @@ class _ProbeTransport implements Transport {
   int openCount = 0;
   int closeCount = 0;
   int wifiRequests = 0;
+  Object? wifiApplyPayload;
   late String _probeId;
-  late String _wifiRequestId;
+  final _wifiRequestIds = <String, String>{};
 
   @override
   Future<void> open(Uri uri) async {
@@ -660,9 +752,14 @@ class _ProbeTransport implements Transport {
     final probe = jsonDecode(data) as Map<String, dynamic>;
     expectSync(probe['v'], 1);
     if (probe['type'] == 'wifi.request') {
-      expectSync(probe['cmd'], 'get');
-      _wifiRequestId = probe['id'] as String;
-      wifiRequests++;
+      final command = probe['cmd'] as String;
+      _wifiRequestIds[command] = probe['id'] as String;
+      if (command == 'get') {
+        wifiRequests++;
+      } else {
+        expectSync(probe['cmd'], 'apply');
+        wifiApplyPayload = probe['payload'];
+      }
       return;
     }
     expectSync(probe['type'], 'ping');
@@ -673,12 +770,22 @@ class _ProbeTransport implements Transport {
     _frames.add(jsonEncode({'v': 1, 'type': 'pong', 'id': _probeId}));
   }
 
-  void replyWifi({Map<String, Object?>? status, String? error}) {
+  void replyWifi({
+    Map<String, Object?>? status,
+    String? error,
+    String command = 'get',
+  }) {
+    final id = _wifiRequestIds.remove(command);
+    expectSync(
+      id,
+      isNotNull,
+      reason: 'Expected pending Wi-Fi request: $command',
+    );
     _frames.add(
       jsonEncode({
         'v': 1,
         'type': 'wifi.result',
-        'id': _wifiRequestId,
+        'id': id,
         'ok': error == null,
         'payload': ?status,
         'error': ?error,

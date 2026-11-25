@@ -19,6 +19,8 @@ import 'src/ccy/data/web_socket_transport.dart';
 import 'src/station/station_data.dart';
 import 'src/station/vehicle_connections.dart';
 import 'src/station/wifi_page.dart';
+import 'src/video/video_panel.dart';
+import 'src/video/video_profile.dart';
 
 part 'src/station/panels.dart';
 part 'src/station/workspace.dart';
@@ -103,6 +105,9 @@ class _XYCarAppState extends State<XYCarApp> {
             newVehicleTransport: widget.newVehicleTransport,
             ccyThemeSelected:
                 snapshot.requireData[wideWebThemePreference] == 'ccy',
+            videoProfile: VideoProfile.fromPreference(
+              snapshot.requireData[videoProfilePreference]!,
+            ),
           ),
         ),
         routes: {
@@ -146,11 +151,13 @@ class _Station extends StatefulWidget {
     required this.modules,
     required this.newVehicleTransport,
     required this.ccyThemeSelected,
+    required this.videoProfile,
   });
 
   final StationModules modules;
   final Transport Function() newVehicleTransport;
   final bool ccyThemeSelected;
+  final VideoProfile videoProfile;
 
   @override
   State<_Station> createState() => _StationState();
@@ -348,6 +355,7 @@ class _StationState extends State<_Station> {
                       onTap: () => _wifiSettings(context),
                     ),
                   ),
+                  _modules.settings.preferenceEntry(videoProfilePreference),
                   _modules.settings.preferenceEntry(languagePreference),
                   if (kIsWeb &&
                       MediaQuery.sizeOf(context).width >= ccyMinimumWidth)
@@ -459,6 +467,8 @@ class _StationState extends State<_Station> {
           constraints.maxWidth >= ccyMinimumWidth) {
         return CcyPreview(
           store: _vehicleLink,
+          video: _video(),
+          onStationSettings: _settings,
           onThemeSettings: _showThemeSettings,
           onVehicleSettings: () => unawaited(_deviceSettings(context)),
         );
@@ -543,6 +553,7 @@ class _StationState extends State<_Station> {
         mobile: mobile,
         compact: box.maxWidth < 400,
         camera: _section == _Section.camera,
+        video: _video(),
         adding: _adding,
         waypoints: _waypoints,
         onSelectView: (camera) => setState(() {
@@ -556,6 +567,9 @@ class _StationState extends State<_Station> {
       ),
     );
   }
+
+  Widget _video() =>
+      VehicleVideo(store: _vehicleLink, profile: widget.videoProfile);
 
   Widget _desktop() {
     return Column(

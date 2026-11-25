@@ -16,11 +16,11 @@ class GenBar extends StatefulWidget {
     required this.store,
     required this.size,
     required this.onResize,
-    required this.onThemeSettings,
+    required this.onSettings,
   });
   final Store store;
   final Size size;
-  final VoidCallback onThemeSettings;
+  final VoidCallback onSettings;
 
   /// [topShift] > 0 表示"从上边拉"，调用方要把窗口上边同步上移，底边不动
   final void Function(Size size, double topShift) onResize;
@@ -114,7 +114,7 @@ class _GenBarState extends State<GenBar> {
   Widget _tab(int i) {
     return Pressable(
       onPressed: S.tabs[i] == S.tabSettings
-          ? widget.onThemeSettings
+          ? widget.onSettings
           : () => setState(() => tab = i),
       builder: (c, st) => ClipPath(
         clipper: const ParallelogramClipper(6),

@@ -18,9 +18,11 @@ import 'station/station_data.dart';
 import 'station/vehicle_connections.dart';
 import 'station/wifi_profiles.dart';
 import 'updates/station_updates.dart';
+import 'video/video_profile.dart';
 
 const languagePreference = 'station.language';
 const wideWebThemePreference = 'station.wideWebTheme';
+const videoProfilePreference = 'station.videoProfile';
 const accountRoute = '/settings/account';
 const updateRoute = '/settings/update';
 bool get isOfflineWifiOrigin =>
@@ -70,6 +72,15 @@ final class StationModules {
           title: (context) => localized(context, '语言', 'Language'),
           defaultValue: 'zh',
           choices: {'zh': (_) => '简体中文', 'en': (_) => 'English'},
+        ),
+        SettingsOption(
+          id: videoProfilePreference,
+          title: (context) => localized(context, '视频画质', 'Video quality'),
+          defaultValue: VideoProfile.standard.resolution,
+          choices: {
+            for (final profile in VideoProfile.values)
+              profile.resolution: (_) => profile.label,
+          },
         ),
         if (kIsWeb)
           SettingsOption(
