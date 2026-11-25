@@ -15,12 +15,16 @@ import 'account/identity_gateway.dart';
 import 'network/local_station_service.dart';
 import 'network/service_config.dart';
 import 'station/station_data.dart';
+import 'station/vehicle_connections.dart';
+import 'station/wifi_profiles.dart';
 import 'updates/station_updates.dart';
 
 const languagePreference = 'station.language';
 const wideWebThemePreference = 'station.wideWebTheme';
 const accountRoute = '/settings/account';
 const updateRoute = '/settings/update';
+bool get isOfflineWifiOrigin =>
+    kIsWeb && Uri.base.host == '192.168.88.1' && Uri.base.port == 8888;
 
 String localized(BuildContext context, String zh, String en) =>
     Localizations.localeOf(context).languageCode == 'en' ? en : zh;
@@ -46,6 +50,8 @@ final class StationModules {
   final UpdateModule updates;
   final ModuleLifecycle lifecycle;
   final SharedPreferences _preferences;
+  late final vehicleConnections = VehicleConnections(_preferences);
+  late final wifiProfiles = WifiProfiles(_preferences);
   final StationUpdates? _updateSource;
   Future<void>? _closing;
 
@@ -79,7 +85,7 @@ final class StationModules {
       ],
     );
     final gateway = StationIdentityGateway(
-      useLiveAccountService
+      useLiveAccountService && !isOfflineWifiOrigin
           ? AccountSession.connect(
               AppJsonClient.parseOrigin(
                 kIsWeb
@@ -88,7 +94,10 @@ final class StationModules {
                           xyCarServiceOrigin,
               ),
             )
-          : LocalStationService(storage).connect(browser: kIsWeb),
+          : LocalStationService(
+              storage,
+              offline: isOfflineWifiOrigin,
+            ).connect(browser: kIsWeb),
     );
     final identity = IdentityController(
       gateway: gateway,
@@ -185,6 +194,7 @@ final class StationModules {
   Future<void> _close() async {
     identity.dispose();
     data.reset();
+    await vehicleConnections.close();
     try {
       await lifecycle.dispose();
     } finally {

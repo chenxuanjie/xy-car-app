@@ -4,7 +4,6 @@ import 'package:app_client/app_client.dart';
 
 import '../account/account_session.dart';
 
-typedef StationDevice = ({String name, String host, String port});
 typedef StationMission = ({String name, List<Offset> waypoints});
 typedef StationMissionPage = ({List<String> names, String? next});
 
@@ -31,28 +30,6 @@ final class StationDataClient {
       throw const AppClientFailure('账号状态已变化', code: 'cancelled');
     }
     return result;
-  }
-
-  Future<StationDevice?> readDevice() async {
-    final result = await _request('device');
-    return result['device'] == null ? null : _device(result['device']);
-  }
-
-  Future<StationDevice> saveDevice(StationDevice device) async {
-    final port = int.tryParse(device.port);
-    if (device.name.isEmpty ||
-        device.name.runes.length > 80 ||
-        device.host.isEmpty ||
-        port == null ||
-        port < 1 ||
-        port > 65535) {
-      throw const AppClientFailure('请填写有效的设备名称、地址和端口', code: 'invalid_device');
-    }
-    final result = await _request(
-      'device',
-      body: {'name': device.name, 'host': device.host, 'port': port},
-    );
-    return _device(result['device']);
   }
 
   Future<StationMissionPage> listMissions({String? after}) async {
@@ -99,17 +76,6 @@ final class StationDataClient {
     '站点数据响应不正确',
     code: 'invalid_response',
   );
-
-  StationDevice _device(Object? value) {
-    if (value case {
-      'name': final String name,
-      'host': final String host,
-      'port': final int port,
-    }) {
-      return (name: name, host: host, port: '$port');
-    }
-    throw _invalidResponse;
-  }
 
   StationMission _mission(Object? value) {
     if (value case {

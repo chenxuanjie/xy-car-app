@@ -3,12 +3,20 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../../station/vehicle_connections.dart';
+
 import 'envelope.dart';
 import 'models.dart';
 import 'state.dart';
 import 'transport.dart';
 
 enum Link { disconnected, connecting, connected }
+
+final class WifiRequestException implements Exception {
+  const WifiRequestException(this.code);
+
+  final String code;
+}
 
 class AlertVm {
   AlertVm(this.severity, this.code, this.message, this.moduleId, this.at);
@@ -41,26 +49,27 @@ class PendingCmd {
 /// 前端绝不推断状态，只渲染后端给的值。
 class Store extends ChangeNotifier {
   Store({
-    List<String>? recent,
-    this.onUrlUsed,
+    this.vehicleConnections,
+    this.onVehicleSaveError,
     required Transport Function() newTransport,
     this.isDemo = false,
-  }) : recentUrls = recent ?? <String>[],
-       _newTransport = newTransport;
+  }) : _newTransport = newTransport;
 
-  static const defaultEndpoint = 'ws://127.0.0.1:9090/ws';
+  static const _demoEndpoint = 'ws://127.0.0.1:9090/ws';
   static const _probeInterval = Duration(seconds: 1);
   static const _probeTimeout = Duration(seconds: 3);
+  static const _lanSelectionTimeout = Duration(milliseconds: 1500);
+  static const _connectionTimeout = Duration(seconds: 5);
   static const _protocolVersion = 1;
 
-  final void Function(String url)? onUrlUsed;
-  final List<String> recentUrls;
+  final VehicleConnections? vehicleConnections;
+  final VoidCallback? onVehicleSaveError;
   final Transport Function() _newTransport;
   final bool isDemo;
 
-  String endpoint = defaultEndpoint;
-
   Link link = Link.disconnected;
+  VehicleRoute? get activeRoute =>
+      link == Link.connected && !isDemo ? _routes[_routeIndex].route : null;
   String? linkError;
   bool dataStale = true;
 
@@ -109,8 +118,16 @@ class Store extends ChangeNotifier {
   Timer? _ticker;
   Timer? _probeTimer;
   Timer? _probeDeadline;
+  Timer? _connectionDeadline;
+  late List<VehicleRouteTarget> _routes = [
+    (route: VehicleRoute.lan, endpoint: Uri.parse(_demoEndpoint)),
+  ];
+  int _routeIndex = 0;
+  bool _requireFirstProbe = false;
   Stopwatch? _activeProbe;
   int _probeSequence = 0;
+  int _wifiSequence = 0;
+  final _wifiRequests = <String, Completer<Map<String, dynamic>>>{};
   int? _rttMs;
   int _cmdSeq = 0;
   bool _disposed = false;
@@ -151,11 +168,58 @@ class Store extends ChangeNotifier {
     return null;
   }
 
-  Future<void> connect([String? url]) async {
-    if (_disposed || (link == Link.connecting && url == null)) return;
-    endpoint = url ?? endpoint;
+  Future<void> connect({Uri? target}) async {
+    if (_disposed) return;
+    if (target == null) {
+      if (link != Link.connecting) await _startConnection();
+      return;
+    }
+    final vehicle =
+        vehicleConnections?.forEndpoint(target) ?? singleVehicle(target);
+    _rememberVehicle(vehicle);
+    final route = vehicle.lan == target
+        ? VehicleRoute.lan
+        : VehicleRoute.remote;
+    _routes = [(route: route, endpoint: target)];
+    _requireFirstProbe = false;
+    await _startConnection();
+  }
+
+  Future<void> connectVehicle(
+    VehicleConnection vehicle, {
+    VehicleConnection? previous,
+  }) async {
+    final routes = vehicle.routes;
+    if (_disposed || routes.isEmpty) return;
+    _rememberVehicle(vehicle, previous: previous);
+    _routes = routes;
+    _requireFirstProbe = true;
+    await _startConnection();
+  }
+
+  void _rememberVehicle(
+    VehicleConnection vehicle, {
+    VehicleConnection? previous,
+  }) {
+    final save = vehicleConnections?.remember(vehicle, previous: previous);
+    if (save != null) {
+      unawaited(
+        save.catchError((Object _) {
+          if (!_disposed) onVehicleSaveError?.call();
+        }),
+      );
+    }
+  }
+
+  Future<void> _startConnection() {
     _retry?.cancel();
+    _routeIndex = 0;
+    return _openRoute();
+  }
+
+  Future<void> _openRoute() async {
     _closeTransport();
+    final candidate = _routes[_routeIndex];
     final t = _newTransport();
     _t = t;
     link = Link.connecting;
@@ -163,16 +227,18 @@ class Store extends ChangeNotifier {
     dataStale = true;
     lastTelemetryAt = null;
     _lastSeq.clear();
+    final timeout = _routes.length > 1 && candidate.route == VehicleRoute.lan
+        ? _lanSelectionTimeout
+        : _connectionTimeout;
+    _connectionDeadline = Timer(timeout, () {
+      if (!identical(_t, t)) return;
+      linkError = '连接或首个延迟探测超时';
+      _onClosed(t);
+    });
     notifyListeners();
     try {
-      await t.open(Uri.parse(endpoint));
+      await t.open(candidate.endpoint).timeout(timeout);
       if (!identical(_t, t)) return;
-      link = Link.connected;
-      recentUrls.remove(endpoint);
-      recentUrls.insert(0, endpoint);
-      if (recentUrls.length > 6) recentUrls.removeRange(6, recentUrls.length);
-      onUrlUsed?.call(endpoint);
-      log('SYS', 'connected $endpoint');
       _sub = t.stream.listen(
         (message) {
           if (identical(_t, t)) _onRaw(message);
@@ -184,10 +250,11 @@ class Store extends ChangeNotifier {
           _onClosed(t);
         },
       );
-      _startTicker();
-      if (!isDemo) {
-        _probeTimer = Timer.periodic(_probeInterval, (_) => _sendProbe(t));
-        _sendProbe(t);
+      if (!isDemo) _sendProbe(t);
+      if (identical(_t, t) &&
+          link != Link.connected &&
+          (!_requireFirstProbe || isDemo)) {
+        _markConnected(t);
       }
     } catch (e) {
       if (!identical(_t, t)) return;
@@ -195,6 +262,19 @@ class Store extends ChangeNotifier {
       log('ERR', 'connect failed: $e', bad: true);
       _onClosed(t);
       return;
+    }
+  }
+
+  void _markConnected(Transport transport) {
+    _connectionDeadline?.cancel();
+    link = Link.connected;
+    log('SYS', 'connected ${_routes[_routeIndex].endpoint}');
+    _startTicker();
+    if (!isDemo) {
+      _probeTimer = Timer.periodic(
+        _probeInterval,
+        (_) => _sendProbe(transport),
+      );
     }
     notifyListeners();
   }
@@ -211,7 +291,14 @@ class Store extends ChangeNotifier {
 
   void _onClosed(Transport transport) {
     if (!identical(_t, transport)) return;
+    final canTryNext =
+        link == Link.connecting && _routeIndex + 1 < _routes.length;
     _closeTransport();
+    if (canTryNext) {
+      _routeIndex++;
+      unawaited(_openRoute());
+      return;
+    }
     if (link != Link.disconnected) log('SYS', 'link closed', bad: true);
     link = Link.disconnected;
     dataStale = true;
@@ -230,8 +317,46 @@ class Store extends ChangeNotifier {
     transport?.close().ignore();
     _probeTimer?.cancel();
     _probeDeadline?.cancel();
+    _connectionDeadline?.cancel();
     _activeProbe = null;
     _rttMs = null;
+    for (final request in _wifiRequests.values) {
+      request.completeError(const WifiRequestException('not_connected'));
+    }
+    _wifiRequests.clear();
+  }
+
+  Future<Map<String, dynamic>> requestWifi(
+    String command, [
+    Map<String, Object?> payload = const {},
+  ]) async {
+    final transport = _t;
+    if (transport == null || link != Link.connected || isDemo) {
+      throw const WifiRequestException('not_connected');
+    }
+    final id = 'wifi-${++_wifiSequence}';
+    final request = Completer<Map<String, dynamic>>();
+    _wifiRequests[id] = request;
+    try {
+      transport.send(
+        jsonEncode({
+          'v': _protocolVersion,
+          'type': 'wifi.request',
+          'cmd': command,
+          'id': id,
+          'payload': payload,
+        }),
+      );
+      txCount++;
+      return await request.future.timeout(
+        const Duration(seconds: 4),
+        onTimeout: () => throw const WifiRequestException('request_timeout'),
+      );
+    } on StateError {
+      throw const WifiRequestException('not_connected');
+    } finally {
+      _wifiRequests.remove(id);
+    }
   }
 
   String get _probeId => 'rtt-$_probeSequence';
@@ -273,7 +398,11 @@ class Store extends ChangeNotifier {
     _probeDeadline?.cancel();
     _activeProbe = null;
     _rttMs = (probe.elapsedMicroseconds / 1000).round();
-    notifyListeners();
+    if (link == Link.connecting) {
+      _markConnected(_t!);
+    } else {
+      notifyListeners();
+    }
   }
 
   void _scheduleRetry() {
@@ -362,6 +491,17 @@ class Store extends ChangeNotifier {
     }
     if (e.type == 'pong') {
       _acceptPong(e);
+      return;
+    }
+    if (e.type == 'wifi.result' && e.version == _protocolVersion) {
+      final request = _wifiRequests.remove(e.id);
+      if (e.ok == true) {
+        request?.complete(e.payload);
+      } else {
+        request?.completeError(
+          WifiRequestException(e.error ?? 'invalid_response'),
+        );
+      }
       return;
     }
     final topic = e.topic;

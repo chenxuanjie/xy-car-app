@@ -13,7 +13,12 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'src/app_modules.dart';
 import 'src/ccy/ccy_preview.dart';
+import 'src/ccy/data/store.dart';
+import 'src/ccy/data/transport.dart';
+import 'src/ccy/data/web_socket_transport.dart';
 import 'src/station/station_data.dart';
+import 'src/station/vehicle_connections.dart';
+import 'src/station/wifi_page.dart';
 
 part 'src/station/panels.dart';
 part 'src/station/workspace.dart';
@@ -39,9 +44,14 @@ const _cyanText = Color(0xffa5f3fc);
 const _yellow = Color(0xffeab308);
 
 class XYCarApp extends StatefulWidget {
-  const XYCarApp({super.key, required this.modules});
+  const XYCarApp({
+    super.key,
+    required this.modules,
+    this.newVehicleTransport = WebSocketTransport.new,
+  });
 
   final StationModules modules;
+  final Transport Function() newVehicleTransport;
 
   @override
   State<XYCarApp> createState() => _XYCarAppState();
@@ -90,6 +100,7 @@ class _XYCarAppState extends State<XYCarApp> {
           ),
           child: _Station(
             modules: modules,
+            newVehicleTransport: widget.newVehicleTransport,
             ccyThemeSelected:
                 snapshot.requireData[wideWebThemePreference] == 'ccy',
           ),
@@ -131,9 +142,14 @@ Widget _updateScreen(BuildContext context, UpdateModule updates) => Scaffold(
 enum _Section { map, camera, data, logs }
 
 class _Station extends StatefulWidget {
-  const _Station({required this.modules, required this.ccyThemeSelected});
+  const _Station({
+    required this.modules,
+    required this.newVehicleTransport,
+    required this.ccyThemeSelected,
+  });
 
   final StationModules modules;
+  final Transport Function() newVehicleTransport;
   final bool ccyThemeSelected;
 
   @override
@@ -143,13 +159,20 @@ class _Station extends StatefulWidget {
 class _StationState extends State<_Station> {
   StationModules get _modules => widget.modules;
   StationDataClient get _stationData => _modules.data;
-  final _host = TextEditingController();
-  final _port = TextEditingController();
+  VehicleConnections get _vehicleConnections => _modules.vehicleConnections;
+  late final _vehicleLink = Store(
+    newTransport: widget.newVehicleTransport,
+    vehicleConnections: _vehicleConnections,
+    onVehicleSaveError: () {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('保存车辆记录失败', 'Could not save the vehicle'))),
+      );
+    },
+  );
   final _waypoints = <Offset>[];
   final _logs = <String>[];
-  String _deviceName = '';
   String _missionName = '';
-  bool _accountDevice = false;
   bool _accountMission = false;
   bool get _english => Localizations.localeOf(context).languageCode == 'en';
   String? _verifiedAccount;
@@ -206,8 +229,7 @@ class _StationState extends State<_Station> {
   @override
   void dispose() {
     _modules.identity.removeListener(_observeAccount);
-    _host.dispose();
-    _port.dispose();
+    _vehicleLink.dispose();
     super.dispose();
   }
 
@@ -246,12 +268,6 @@ class _StationState extends State<_Station> {
     _accountGeneration++;
     _stationData.reset();
     setState(() {
-      if (_accountDevice) {
-        _deviceName = '';
-        _host.clear();
-        _port.clear();
-        _accountDevice = false;
-      }
       if (_accountMission) {
         _missionName = '';
         _waypoints.clear();
@@ -323,30 +339,42 @@ class _StationState extends State<_Station> {
                       onTap: () => _deviceSettings(context),
                     ),
                   ),
+                  SettingsEntry(
+                    id: 'station.wifi',
+                    builder: (context) => ListTile(
+                      leading: const Icon(Icons.wifi),
+                      title: const Text('Wi-Fi'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _wifiSettings(context),
+                    ),
+                  ),
                   _modules.settings.preferenceEntry(languagePreference),
                   if (kIsWeb &&
                       MediaQuery.sizeOf(context).width >= ccyMinimumWidth)
                     _modules.settings.preferenceEntry(wideWebThemePreference),
                 ],
               ),
-              SettingsGroup(
-                title: (context) =>
-                    localized(context, '账号与版本', 'Account and version'),
-                icon: Icons.manage_accounts_outlined,
-                leading: const _StationIcon(_StationGlyph.manageAccounts),
-                entries: [
-                  SettingsEntry(
-                    id: 'identity.account',
-                    builder: (context) => IdentityAccountTile(
-                      controller: _modules.identity,
-                      leading: const _StationIcon(_StationGlyph.accountCircle),
-                      onTap: () =>
-                          Navigator.of(context).pushNamed(accountRoute),
+              if (!isOfflineWifiOrigin)
+                SettingsGroup(
+                  title: (context) =>
+                      localized(context, '账号与版本', 'Account and version'),
+                  icon: Icons.manage_accounts_outlined,
+                  leading: const _StationIcon(_StationGlyph.manageAccounts),
+                  entries: [
+                    SettingsEntry(
+                      id: 'identity.account',
+                      builder: (context) => IdentityAccountTile(
+                        controller: _modules.identity,
+                        leading: const _StationIcon(
+                          _StationGlyph.accountCircle,
+                        ),
+                        onTap: () =>
+                            Navigator.of(context).pushNamed(accountRoute),
+                      ),
                     ),
-                  ),
-                  ..._modules.updates.settingsEntries,
-                ],
-              ),
+                    ..._modules.updates.settingsEntries,
+                  ],
+                ),
             ],
           ),
         ),
@@ -360,7 +388,24 @@ class _StationState extends State<_Station> {
       showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
-          content: SizedBox(width: 320, child: entry.builder(context)),
+          content: SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                entry.builder(context),
+                ListTile(
+                  leading: const Icon(Icons.wifi),
+                  title: const Text('Wi-Fi'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _wifiSettings(this.context);
+                  },
+                ),
+              ],
+            ),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -372,25 +417,38 @@ class _StationState extends State<_Station> {
     );
   }
 
-  Future<void> _deviceSettings(BuildContext context) async {
-    final generation = _accountGeneration;
-    final result =
-        await showDialog<({StationDevice device, bool accountOwned})>(
-          context: context,
-          builder: (context) => _DeviceSettings(
-            tr: (zh, en) => localized(context, zh, en),
-            device: (name: _deviceName, host: _host.text, port: _port.text),
-            accountOwned: _accountDevice,
-            stationData: _stationData,
+  void _wifiSettings(BuildContext context) {
+    unawaited(
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => WifiPage(
+            link: _vehicleLink,
+            identity: _modules.identity,
+            profiles: _modules.wifiProfiles,
+            serviceScope: kIsWeb ? Uri.base.origin : _modules.accountOrigin,
           ),
-        );
-    if (!mounted || result == null || generation != _accountGeneration) return;
-    setState(() {
-      _deviceName = result.device.name;
-      _host.text = result.device.host;
-      _port.text = result.device.port;
-      _accountDevice = result.accountOwned;
-    });
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deviceSettings(BuildContext context) async {
+    final selection = await showDialog<_VehicleSelection>(
+      context: context,
+      builder: (context) => _DeviceSettings(
+        tr: (zh, en) => localized(context, zh, en),
+        connections: _vehicleConnections,
+        link: _vehicleLink,
+      ),
+    );
+    if (mounted && selection != null) {
+      unawaited(
+        _vehicleLink.connectVehicle(
+          selection.vehicle,
+          previous: selection.previous,
+        ),
+      );
+    }
   }
 
   @override
@@ -399,7 +457,11 @@ class _StationState extends State<_Station> {
       if (kIsWeb &&
           widget.ccyThemeSelected &&
           constraints.maxWidth >= ccyMinimumWidth) {
-        return CcyPreview(onThemeSettings: _showThemeSettings);
+        return CcyPreview(
+          store: _vehicleLink,
+          onThemeSettings: _showThemeSettings,
+          onVehicleSettings: () => unawaited(_deviceSettings(context)),
+        );
       }
       return _classicStation();
     },
@@ -447,6 +509,7 @@ class _StationState extends State<_Station> {
   Widget _sidebar() {
     return _Sidebar(
       tr: tr,
+      vehicleLink: _vehicleLink,
       stream: _stream,
       receive: _receive,
       automatic: _automatic,
@@ -516,21 +579,13 @@ class _StationState extends State<_Station> {
                 border: const Color(0xff155e75),
               ),
               const Spacer(),
-              _AddressBar(
-                label: tr('目标地址', 'TARGET'),
-                host: _host,
-                port: _port,
-              ),
-              const SizedBox(width: 16),
-              Tooltip(
-                message: tr('设备通信未接入', 'Device connection unavailable'),
-                child: _Control(
-                  label: tr('连接设备', 'CONNECT DEVICE'),
-                  border: _teal,
-                  background: const Color(0xff0e7490),
-                  foreground: _cyanText,
-                  width: 104,
-                ),
+              _Control(
+                label: tr('车辆连接', 'VEHICLE LINK'),
+                icon: const _StationIcon(_StationGlyph.server, size: 16),
+                onPressed: () => unawaited(_deviceSettings(context)),
+                border: _teal,
+                background: const Color(0xff0e7490),
+                foreground: _cyanText,
               ),
               const SizedBox(width: 16),
               const SizedBox(
@@ -595,19 +650,14 @@ class _StationState extends State<_Station> {
                 ),
               ),
               const Expanded(child: _Brand(compact: true)),
-              const SizedBox.square(
-                dimension: 7,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: _yellow,
-                    shape: BoxShape.circle,
-                  ),
+              TextButton.icon(
+                onPressed: () => unawaited(_deviceSettings(context)),
+                icon: const _StationIcon(_StationGlyph.server, size: 14),
+                label: _VehicleLinkStatus(
+                  tr: tr,
+                  store: _vehicleLink,
+                  idleLabel: tr('车辆连接', 'Vehicle link'),
                 ),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                tr('离线', 'OFFLINE'),
-                style: const TextStyle(color: _yellow, fontSize: 10),
               ),
               IconButton(
                 tooltip: tr('系统设置', 'Settings'),

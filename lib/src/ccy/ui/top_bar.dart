@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../station/vehicle_connections.dart';
 import '../data/store.dart';
 import '../theme/tokens.dart';
-import 'connect_dialog.dart';
 import 'kit.dart';
 import 'layout.dart';
 import 'px.dart';
@@ -16,12 +16,12 @@ class TopBar extends StatefulWidget {
     super.key,
     required this.store,
     required this.onThemeSettings,
+    required this.onVehicleSettings,
     required this.onExitDemo,
     required this.openInfo,
     required this.openMods,
     required this.openGen,
     required this.onToggle,
-    this.demoConnect = false,
     required this.mode,
     required this.onMode,
     this.showToggles = true,
@@ -29,12 +29,12 @@ class TopBar extends StatefulWidget {
 
   final Store store;
   final VoidCallback onThemeSettings;
+  final VoidCallback onVehicleSettings;
   final VoidCallback onExitDemo;
   final bool openInfo;
   final bool openMods;
   final bool openGen;
   final void Function(String which) onToggle;
-  final bool demoConnect;
   final String mode;
   final void Function(String mode) onMode;
 
@@ -54,16 +54,6 @@ class _TopBarState extends State<TopBar> {
     _t = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
-    if (widget.demoConnect) {
-      Timer(const Duration(seconds: 3), () {
-        if (mounted) {
-          showDialog<void>(
-            context: context,
-            builder: (_) => ConnectDialog(store: widget.store),
-          );
-        }
-      });
-    }
   }
 
   @override
@@ -163,12 +153,12 @@ class _TopBarState extends State<TopBar> {
                     ),
                   )
                 else
-                  GestureDetector(
-                    onTap: () => showDialog<void>(
-                      context: context,
-                      builder: (_) => ConnectDialog(store: s),
+                  Tooltip(
+                    message: '车辆连接',
+                    child: Pressable(
+                      onPressed: widget.onVehicleSettings,
+                      builder: (_, _) => _linkChip(linked),
                     ),
-                    child: _linkChip(linked),
                   ),
                 const SizedBox(width: 8),
                 _clock(
@@ -216,7 +206,12 @@ class _TopBarState extends State<TopBar> {
   Widget _linkChip(bool linked) {
     final rttMs = linked ? widget.store.rttMs : null;
     final tint = !linked ? T.danger : (rttMs == null ? T.warn : T.ok);
-    final text = rttMs == null ? 'LINK —' : 'LINK $rttMs ms';
+    final route = switch (widget.store.activeRoute) {
+      VehicleRoute.lan => 'LAN',
+      VehicleRoute.remote => 'WAN',
+      null => 'LINK',
+    };
+    final text = rttMs == null ? 'LINK —' : '$route $rttMs ms';
     return _chip(
       tint: tint,
       child: Row(

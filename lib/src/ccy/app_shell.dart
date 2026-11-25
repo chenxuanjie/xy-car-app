@@ -17,15 +17,15 @@ class AppShell extends StatefulWidget {
     super.key,
     required this.store,
     required this.onThemeSettings,
+    required this.onVehicleSettings,
     required this.onToggleDemo,
-    this.demoConnect = false,
     this.demoMods = false,
     this.demoMode = 'play',
   });
   final Store store;
   final VoidCallback onThemeSettings;
+  final VoidCallback onVehicleSettings;
   final VoidCallback onToggleDemo;
-  final bool demoConnect;
   final bool demoMods;
   final String demoMode;
 
@@ -186,8 +186,8 @@ class _AppShellState extends State<AppShell> {
                                 child: TopBar(
                                   store: store,
                                   onThemeSettings: widget.onThemeSettings,
+                                  onVehicleSettings: widget.onVehicleSettings,
                                   onExitDemo: widget.onToggleDemo,
-                                  demoConnect: widget.demoConnect,
                                   openInfo: _showInfo,
                                   openMods: _showMods,
                                   openGen: _showGen,

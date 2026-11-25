@@ -29,38 +29,42 @@ class _Brand extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text.rich(
-              TextSpan(
-                text: 'USV',
-                children: [
-                  TextSpan(
-                    text: 'TERMINAL',
-                    style: TextStyle(color: _cyan),
-                  ),
-                ],
-              ),
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: compact ? 14 : 19,
-                fontWeight: FontWeight.w900,
-                fontStyle: FontStyle.italic,
-                letterSpacing: 1.3,
-              ),
-            ),
-            if (subtitle case final subtitle?)
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  color: _teal,
-                  fontSize: 9,
-                  letterSpacing: 2,
+        Flexible(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text.rich(
+                const TextSpan(
+                  text: 'USV',
+                  children: [
+                    TextSpan(
+                      text: 'TERMINAL',
+                      style: TextStyle(color: _cyan),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: compact ? 14 : 19,
+                  fontWeight: FontWeight.w900,
+                  fontStyle: FontStyle.italic,
+                  letterSpacing: 1.3,
                 ),
               ),
-          ],
+              if (subtitle case final subtitle?)
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: _teal,
+                    fontSize: 9,
+                    letterSpacing: 2,
+                  ),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -150,90 +154,6 @@ class _Control extends StatelessWidget {
     return tooltip == null
         ? control
         : Tooltip(message: tooltip!, child: control);
-  }
-}
-
-class _AddressBar extends StatelessWidget {
-  const _AddressBar({
-    required this.label,
-    required this.host,
-    required this.port,
-  });
-
-  final String label;
-  final TextEditingController host;
-  final TextEditingController port;
-
-  Widget _field(
-    String label,
-    String hint,
-    TextEditingController controller,
-    double width,
-  ) {
-    return SizedBox(
-      width: width,
-      child: Semantics(
-        label: label,
-        child: TextField(
-          controller: controller,
-          textAlign: TextAlign.center,
-          keyboardType: controller == port
-              ? TextInputType.number
-              : TextInputType.url,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
-          ),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(color: _border),
-            contentPadding: const EdgeInsets.only(bottom: 11),
-            isDense: true,
-            border: InputBorder.none,
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 34,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: _background,
-        border: Border.all(color: _border),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        children: [
-          ColoredBox(
-            color: _surface,
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: _cyan,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          _field('IP', 'Loading...', host, 128),
-          const SizedBox(
-            height: 18,
-            child: VerticalDivider(color: _border, width: 1),
-          ),
-          _field('Port', '...', port, 62),
-        ],
-      ),
-    );
   }
 }
 
@@ -327,9 +247,48 @@ class _PanelTitle extends StatelessWidget {
   }
 }
 
-class _StatusPanel extends StatelessWidget {
-  const _StatusPanel({required this.tr});
+class _VehicleLinkStatus extends StatelessWidget {
+  const _VehicleLinkStatus({
+    required this.tr,
+    required this.store,
+    this.idleLabel,
+  });
+
   final _Translate tr;
+  final Store store;
+  final String? idleLabel;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: store,
+    builder: (context, _) {
+      final rtt = store.rttMs;
+      final error = store.linkError;
+      final label = switch (store.link) {
+        Link.disconnected when error != null => tr('连接失败', 'LINK ERROR'),
+        Link.disconnected => idleLabel ?? tr('离线', 'OFFLINE'),
+        Link.connecting => tr('连接中', 'CONNECTING'),
+        Link.connected when rtt == null => tr('等待延迟', 'WAITING'),
+        Link.connected => switch (store.activeRoute) {
+          VehicleRoute.lan => '${tr('局域网', 'LAN')} · $rtt ms',
+          VehicleRoute.remote => '${tr('外网', 'Remote')} · $rtt ms',
+          null => '$rtt ms',
+        },
+      };
+      final color = rtt == null ? _yellow : _cyan;
+      return Tooltip(
+        message: error ?? tr('WebSocket 往返延迟', 'WebSocket round-trip latency'),
+        child: Text(label, style: TextStyle(color: color, fontSize: 11)),
+      );
+    },
+  );
+}
+
+class _StatusPanel extends StatelessWidget {
+  const _StatusPanel({required this.tr, required this.vehicleLink});
+
+  final _Translate tr;
+  final Store vehicleLink;
 
   Widget _coordinate(String label, CrossAxisAlignment align) {
     return Expanded(
@@ -390,6 +349,17 @@ class _StatusPanel extends StatelessWidget {
               tr('等待数据', 'WAITING DATA'),
               style: const TextStyle(color: _yellow, fontSize: 10),
             ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                tr('链路延迟', 'LINK LATENCY'),
+                style: const TextStyle(fontSize: 10, color: _muted),
+              ),
+              _VehicleLinkStatus(tr: tr, store: vehicleLink),
+            ],
           ),
           const SizedBox(height: 17),
           Row(
@@ -494,6 +464,7 @@ class _StatusPanel extends StatelessWidget {
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.tr,
+    required this.vehicleLink,
     required this.stream,
     required this.receive,
     required this.automatic,
@@ -508,6 +479,7 @@ class _Sidebar extends StatelessWidget {
   });
 
   final _Translate tr;
+  final Store vehicleLink;
   final bool stream, receive, automatic, loop;
   final int waypointCount;
   final VoidCallback onStream, onReceive, onSend, onOpenMissions;
@@ -540,7 +512,7 @@ class _Sidebar extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 19, 16),
         children: [
-          _StatusPanel(tr: tr),
+          _StatusPanel(tr: tr, vehicleLink: vehicleLink),
           const SizedBox(height: 16),
           _Panel(
             child: Column(

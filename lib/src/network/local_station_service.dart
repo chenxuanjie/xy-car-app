@@ -10,15 +10,15 @@ import 'service_config.dart';
 
 /// In-process test service for the existing XY-CAR HTTP protocol.
 final class LocalStationService {
-  LocalStationService(this.preferences);
+  LocalStationService(this.preferences, {this.offline = false});
 
   final SharedPreferences preferences;
+  final bool offline;
   static const _signedInKey = 'xy_car_app.preview.browser';
   static const _refreshKey = 'xy_car_app.preview.native';
   static const _csrf = 'xy-car-local-csrf';
   static const _refresh = 'xy-car-local-refresh';
   static const _user = 'xy-car-preview';
-  static const _device = 'xy_car_app.preview.device';
   static const _missions = 'xy_car_app.preview.missions';
 
   AccountSession connect({required bool browser}) {
@@ -51,10 +51,11 @@ final class LocalStationService {
           headers: {'content-type': 'application/json'},
         );
     http.Response denied() => reply({'detail': 'session_rejected'}, 401);
-    final active = preferences.getBool(_signedInKey) == true;
+    final active = !offline && preferences.getBool(_signedInKey) == true;
     if (path == 'auth/browser/bootstrap') {
       return reply({'csrf_token': _csrf, 'authenticated': active});
     }
+    if (offline) return denied();
     if (browserRoute && request.headers['x-csrf-token'] != _csrf) {
       return reply({'detail': 'csrf_rejected'}, 403);
     }
@@ -79,14 +80,6 @@ final class LocalStationService {
     if (bearer?.startsWith('Bearer local.') != true ||
         (request.url.path.startsWith('/api/') && !active)) {
       return denied();
-    }
-    if (path == 'station/device') {
-      if (request.method == 'POST') {
-        await preferences.setString(_device, jsonEncode(input));
-        return reply({'device': input});
-      }
-      final stored = preferences.getString(_device);
-      return reply({'device': stored == null ? null : jsonDecode(stored)});
     }
     final missions =
         jsonDecode(preferences.getString(_missions) ?? '{}')
