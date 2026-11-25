@@ -22,7 +22,8 @@ import 'video/video_profile.dart';
 
 const languagePreference = 'station.language';
 const wideWebThemePreference = 'station.wideWebTheme';
-const videoProfilePreference = 'station.videoProfile';
+const videoResolutionPreference = 'station.videoResolution';
+const videoFrameRatePreference = 'station.videoFrameRate';
 const accountRoute = '/settings/account';
 const updateRoute = '/settings/update';
 bool get isOfflineWifiOrigin =>
@@ -74,12 +75,21 @@ final class StationModules {
           choices: {'zh': (_) => '简体中文', 'en': (_) => 'English'},
         ),
         SettingsOption(
-          id: videoProfilePreference,
-          title: (context) => localized(context, '视频画质', 'Video quality'),
-          defaultValue: VideoProfile.standard.resolution,
+          id: videoResolutionPreference,
+          title: (context) => localized(context, '视频分辨率', 'Video resolution'),
+          defaultValue: VideoResolution.p720.value,
           choices: {
-            for (final profile in VideoProfile.values)
-              profile.resolution: (_) => profile.label,
+            for (final resolution in VideoResolution.values)
+              resolution.value: (_) => resolution.value,
+          },
+        ),
+        SettingsOption(
+          id: videoFrameRatePreference,
+          title: (context) => localized(context, '视频帧率', 'Video frame rate'),
+          defaultValue: VideoFrameRate.fps25.value,
+          choices: {
+            for (final frameRate in VideoFrameRate.values)
+              frameRate.value: (_) => frameRate.label,
           },
         ),
         if (kIsWeb)
@@ -225,17 +235,36 @@ final class _PreferenceStore implements SettingsPreferenceStore {
   Future<Map<String, String>> read() async {
     final value = _preferences.getString(_key);
     if (value == null) return {};
+    final Object? json;
     try {
-      final json = jsonDecode(value);
-      return json is Map<String, dynamic>
-          ? {
-              for (final item in json.entries)
-                if (item.value is String) item.key: item.value as String,
-            }
-          : {};
+      json = jsonDecode(value);
     } on FormatException {
       return {};
     }
+    if (json is! Map<String, dynamic>) return {};
+    final preferences = {
+      for (final item in json.entries)
+        if (item.value is String) item.key: item.value as String,
+    };
+    final previousResolution = preferences.remove('station.videoProfile');
+    final previousFrameRate = switch (previousResolution) {
+      '480p' => VideoFrameRate.fps15,
+      '720p' => VideoFrameRate.fps25,
+      '1080p' => VideoFrameRate.fps30,
+      _ => null,
+    };
+    if (previousFrameRate != null) {
+      preferences.putIfAbsent(
+        videoResolutionPreference,
+        () => previousResolution!,
+      );
+      preferences.putIfAbsent(
+        videoFrameRatePreference,
+        () => previousFrameRate.value,
+      );
+      await write(preferences);
+    }
+    return preferences;
   }
 
   @override

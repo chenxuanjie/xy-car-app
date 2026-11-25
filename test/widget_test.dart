@@ -18,29 +18,58 @@ import 'package:xy_car_app/src/ccy/ui/module_card.dart';
 import 'package:xy_car_app/src/station/vehicle_connections.dart';
 
 void main() {
-  testWidgets('video settings save the selected resolution and frame rate', (
+  testWidgets('video settings save resolution and frame rate independently', (
     tester,
   ) async {
     final modules = await start(tester, const Size(390, 844));
     await tap(tester, find.byTooltip('系统设置'));
-    final row = find.byKey(const ValueKey(videoProfilePreference));
-    final selector = find.descendant(
-      of: row,
+    Finder selector(String id) => find.descendant(
+      of: find.byKey(ValueKey(id)),
       matching: find.byType(DropdownButton<String>),
     );
-    expect(tester.widget<DropdownButton<String>>(selector).value, '720p');
+    final resolution = selector(videoResolutionPreference);
+    final frameRate = selector(videoFrameRatePreference);
+    expect(tester.widget<DropdownButton<String>>(resolution).value, '720p');
+    expect(tester.widget<DropdownButton<String>>(frameRate).value, '25');
 
-    await tap(tester, selector);
-    expect(find.text('480p / 15 fps'), findsOneWidget);
-    expect(find.text('1080p / 30 fps'), findsOneWidget);
-    await tap(tester, find.text('1080p / 30 fps'));
-    expect(tester.widget<DropdownButton<String>>(selector).value, '1080p');
-    expect(modules.settings.preferences.values[videoProfilePreference], '1080p');
-    final storage = await SharedPreferences.getInstance();
+    await tap(tester, resolution);
+    expect(find.text('480p'), findsOneWidget);
+    await tap(tester, find.text('1080p'));
+    expect(tester.widget<DropdownButton<String>>(frameRate).value, '25');
+
+    await tap(tester, frameRate);
+    expect(find.text('30 fps'), findsOneWidget);
+    await tap(tester, find.text('15 fps'));
+    expect(tester.widget<DropdownButton<String>>(resolution).value, '1080p');
     expect(
-      jsonDecode(storage.getString('xy_car_app.settings')!)[videoProfilePreference],
+      modules.settings.preferences.values[videoResolutionPreference],
       '1080p',
     );
+    expect(modules.settings.preferences.values[videoFrameRatePreference], '15');
+    final storage = await SharedPreferences.getInstance();
+    final saved = jsonDecode(storage.getString('xy_car_app.settings')!) as Map;
+    expect(saved[videoResolutionPreference], '1080p');
+    expect(saved[videoFrameRatePreference], '15');
+  });
+
+  testWidgets('previous video profile retains both settings on upgrade', (
+    tester,
+  ) async {
+    final modules = await start(
+      tester,
+      const Size(390, 844),
+      initialSettings: {'station.videoProfile': '480p'},
+    );
+    expect(
+      modules.settings.preferences.values[videoResolutionPreference],
+      '480p',
+    );
+    expect(modules.settings.preferences.values[videoFrameRatePreference], '15');
+    final storage = await SharedPreferences.getInstance();
+    final saved = jsonDecode(storage.getString('xy_car_app.settings')!) as Map;
+    expect(saved[videoResolutionPreference], '480p');
+    expect(saved[videoFrameRatePreference], '15');
+    expect(saved.containsKey('station.videoProfile'), isFalse);
   });
 
   testWidgets(
@@ -686,10 +715,14 @@ Future<StationModules> start(
   WidgetTester tester,
   Size size, {
   Transport Function() newVehicleTransport = WebSocketTransport.new,
+  Map<String, String> initialSettings = const {},
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
-  SharedPreferences.setMockInitialValues({});
+  SharedPreferences.setMockInitialValues({
+    if (initialSettings.isNotEmpty)
+      'xy_car_app.settings': jsonEncode(initialSettings),
+  });
   FlutterSecureStorage.setMockInitialValues({});
   final modules = (await tester.runAsync(() async {
     final modules = await StationModules.start(

@@ -105,8 +105,13 @@ class _XYCarAppState extends State<XYCarApp> {
             newVehicleTransport: widget.newVehicleTransport,
             ccyThemeSelected:
                 snapshot.requireData[wideWebThemePreference] == 'ccy',
-            videoProfile: VideoProfile.fromPreference(
-              snapshot.requireData[videoProfilePreference]!,
+            videoProfile: VideoProfile(
+              resolution: VideoResolution.fromPreference(
+                snapshot.requireData[videoResolutionPreference]!,
+              ),
+              frameRate: VideoFrameRate.fromPreference(
+                snapshot.requireData[videoFrameRatePreference]!,
+              ),
             ),
           ),
         ),
@@ -355,7 +360,8 @@ class _StationState extends State<_Station> {
                       onTap: () => _wifiSettings(context),
                     ),
                   ),
-                  _modules.settings.preferenceEntry(videoProfilePreference),
+                  _modules.settings.preferenceEntry(videoResolutionPreference),
+                  _modules.settings.preferenceEntry(videoFrameRatePreference),
                   _modules.settings.preferenceEntry(languagePreference),
                   if (kIsWeb &&
                       MediaQuery.sizeOf(context).width >= ccyMinimumWidth)
