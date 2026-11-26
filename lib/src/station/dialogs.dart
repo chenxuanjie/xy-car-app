@@ -186,7 +186,6 @@ class _DeviceSettingsState extends State<_DeviceSettings> {
   List<DiscoveredVehicle>? _vehicles;
   bool _loading = false;
   bool _failed = false;
-  bool _hotspotLaunchFailed = false;
 
   @override
   void initState() {
@@ -224,29 +223,15 @@ class _DeviceSettingsState extends State<_DeviceSettings> {
 
   void _select(VehicleSelection selection) => Navigator.pop(context, selection);
 
-  Future<void> _openHotspot() async {
-    if (!kIsWeb) {
-      _select((
-        vehicleId: null,
-        routes: [
-          (
-            route: VehicleRoute.hotspot,
-            endpoint: vehicleSocket(vehicleHotspotHost),
-          ),
-        ],
-      ));
-      return;
-    }
-    final page = Uri(
-      scheme: 'http',
-      host: vehicleHotspotHost,
-      port: vehicleBoardWebPort,
-      path: '/',
-    );
-    if (!await launchUrl(page, webOnlyWindowName: '_blank') && mounted) {
-      setState(() => _hotspotLaunchFailed = true);
-    }
-  }
+  void _connectHotspot() => _select((
+    vehicleId: null,
+    routes: [
+      (
+        route: VehicleRoute.hotspot,
+        endpoint: vehicleSocket(vehicleHotspotHost),
+      ),
+    ],
+  ));
 
   Widget _vehicleTile(DiscoveredVehicle vehicle, String? connectedId) {
     final tr = widget.tr;
@@ -343,16 +328,10 @@ class _DeviceSettingsState extends State<_DeviceSettings> {
                       _vehicleTile(vehicle, connectedId),
                   const Divider(),
                   TextButton.icon(
-                    onPressed: _openHotspot,
+                    onPressed: _connectHotspot,
                     icon: const Icon(Icons.wifi_tethering),
-                    label: Text(
-                      kIsWeb
-                          ? tr('打开车载热点页面', 'Open vehicle hotspot page')
-                          : tr('连接车端热点', 'Connect to vehicle hotspot'),
-                    ),
+                    label: Text(tr('连接车端热点', 'Connect to vehicle hotspot')),
                   ),
-                  if (_hotspotLaunchFailed)
-                    const SelectableText('http://192.168.88.1:8089/'),
                 ],
               ],
             );

@@ -281,6 +281,25 @@ void main() {
     expect(find.textContaining(RegExp(r'^外网 · \d+ ms$')), findsOneWidget);
   });
 
+  testWidgets('hotspot connects to the fixed address in the current station', (
+    tester,
+  ) async {
+    final transport = _ProbeTransport();
+    await start(
+      tester,
+      const Size(390, 844),
+      newVehicleTransport: () => transport,
+    );
+    await openVehicleDialog(tester);
+    await tap(tester, find.text('连接车端热点'));
+    expect(transport.endpoint, Uri.parse('ws://192.168.88.1:9090/ws'));
+    expect(find.byType(AlertDialog), findsNothing);
+
+    transport.reply();
+    await tester.pump();
+    expect(find.textContaining(RegExp(r'^热点 · \d+ ms$')), findsOneWidget);
+  });
+
   testWidgets('Wi-Fi shows the vehicle snapshot for each connection', (
     tester,
   ) async {
@@ -550,7 +569,7 @@ void main() {
     expect(find.text('TELOPS'), findsOneWidget);
     expect(find.textContaining(RegExp(r'^LAN \d+ ms$')), findsOneWidget);
     await tap(tester, find.byTooltip('车辆连接'));
-    expect(find.text('打开车载热点页面'), findsOneWidget);
+    expect(find.text('连接车端热点'), findsOneWidget);
     await tap(tester, find.text('关闭'));
 
     await tester.tap(find.text('监控'));
