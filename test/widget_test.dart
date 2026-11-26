@@ -116,9 +116,22 @@ void main() {
       _listedVehicle(),
       _listedVehicle(id: 'other', online: false),
     ];
-    await start(tester, const Size(1024, 760), listedVehicles: () => vehicles);
+    var failed = false;
+    var queries = 0;
+    await start(
+      tester,
+      const Size(1024, 760),
+      listedVehicles: () {
+        queries++;
+        if (failed) throw StateError('Directory unavailable');
+        return vehicles;
+      },
+    );
 
     await openVehicleDialog(tester);
+    expect(find.text('持续搜索车辆'), findsOneWidget);
+    expect(find.text('每 5 秒自动更新'), findsOneWidget);
+    expect(find.byIcon(Icons.radar), findsOneWidget);
     expect(find.text('car'), findsOneWidget);
     expect(find.text('other'), findsOneWidget);
     expect(find.textContaining('云端在线'), findsOneWidget);
@@ -131,7 +144,21 @@ void main() {
     expect(find.textContaining('云端离线'), findsOneWidget);
     expect(find.textContaining('192.168.1.41'), findsOneWidget);
     expect(find.text('other'), findsNothing);
+
+    failed = true;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(find.text('搜索暂时中断'), findsOneWidget);
+    expect(find.text('等待自动重试'), findsOneWidget);
+    failed = false;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(find.text('持续搜索车辆'), findsOneWidget);
+
     await tap(tester, find.text('关闭'));
+    final queriesAfterClosing = queries;
+    await tester.pump(const Duration(seconds: 5));
+    expect(queries, queriesAfterClosing);
   });
 
   testWidgets(
@@ -372,7 +399,7 @@ void main() {
   testWidgets('enabling the hotspot sends only AP credentials over the LAN', (
     tester,
   ) async {
-    final transport = _ProbeTransport();
+    final transport = _ProbeTransport(autoReply: true);
     await start(
       tester,
       const Size(1280, 720),
@@ -643,6 +670,9 @@ Future<StationModules> start(
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
+  tester.platformDispatcher.accessibilityFeaturesTestValue =
+      const FakeAccessibilityFeatures(disableAnimations: true);
+  addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
   SharedPreferences.setMockInitialValues({
     if (initialSettings.isNotEmpty)
       'xy_car_app.settings': jsonEncode(initialSettings),
@@ -701,9 +731,10 @@ Future<void> disconnectVehicle(WidgetTester tester) async {
 }
 
 class _ProbeTransport implements Transport {
-  _ProbeTransport({this.openError});
+  _ProbeTransport({this.openError, this.autoReply = false});
 
   final Object? openError;
+  final bool autoReply;
   final _frames = StreamController<String>(sync: true);
   Uri? endpoint;
   int openCount = 0;
@@ -740,6 +771,7 @@ class _ProbeTransport implements Transport {
     }
     expectSync(probe['type'], 'ping');
     _probeId = probe['id'] as String;
+    if (autoReply) reply();
   }
 
   void reply({String vehicleId = 'car'}) {

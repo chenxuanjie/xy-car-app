@@ -305,8 +305,14 @@ class _DeviceSettingsState extends State<_DeviceSettings> {
                     child: Text(tr('连接本车', 'Connect to this vehicle')),
                   )
                 else ...[
-                  if (vehicles == null && _loading)
-                    const LinearProgressIndicator(),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _VehicleSearchStatus(
+                      loading: _loading,
+                      failed: _failed,
+                      tr: tr,
+                    ),
+                  ),
                   if (_failed)
                     Row(
                       children: [
@@ -356,6 +362,109 @@ class _DeviceSettingsState extends State<_DeviceSettings> {
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: Text(tr('关闭', 'Close')),
+        ),
+      ],
+    );
+  }
+}
+
+class _VehicleSearchStatus extends StatefulWidget {
+  const _VehicleSearchStatus({
+    required this.loading,
+    required this.failed,
+    required this.tr,
+  });
+
+  final bool loading;
+  final bool failed;
+  final _Translate tr;
+
+  @override
+  State<_VehicleSearchStatus> createState() => _VehicleSearchStatusState();
+}
+
+class _VehicleSearchStatusState extends State<_VehicleSearchStatus>
+    with SingleTickerProviderStateMixin {
+  late final _sweep = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 3),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateMotion();
+  }
+
+  @override
+  void didUpdateWidget(_VehicleSearchStatus oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _updateMotion();
+  }
+
+  void _updateMotion() {
+    if (MediaQuery.disableAnimationsOf(context) ||
+        (widget.failed && !widget.loading)) {
+      _sweep.stop();
+      return;
+    }
+    if (!_sweep.isAnimating) _sweep.repeat();
+  }
+
+  @override
+  void dispose() {
+    _sweep.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tr = widget.tr;
+    final interrupted = widget.failed && !widget.loading;
+    final color = interrupted
+        ? Theme.of(context).colorScheme.error
+        : Theme.of(context).colorScheme.primary;
+    return Row(
+      children: [
+        ExcludeSemantics(
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: 0.08),
+              border: Border.all(color: color.withValues(alpha: 0.25)),
+            ),
+            child: RotationTransition(
+              turns: _sweep,
+              child: Icon(Icons.radar, color: color, size: 25),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                interrupted
+                    ? tr('搜索暂时中断', 'Search interrupted')
+                    : tr('持续搜索车辆', 'Searching for vehicles'),
+                style: TextStyle(color: color),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                widget.loading
+                    ? tr('正在更新车辆列表…', 'Updating vehicle list…')
+                    : interrupted
+                    ? tr('等待自动重试', 'Waiting to retry')
+                    : tr('每 5 秒自动更新', 'Updates every 5 seconds'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
