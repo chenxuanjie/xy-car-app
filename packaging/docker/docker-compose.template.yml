@@ -9,3 +9,4 @@ services:
       - "127.0.0.1:8089:8080"
     environment:
       APP_SERVICE_UPSTREAM: http://192.168.1.55:18280
+      VEHICLE_WS_UPSTREAM: http://192.168.1.55:10090

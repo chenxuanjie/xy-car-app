@@ -129,7 +129,7 @@ class _WifiPageState extends State<WifiPage> {
       if (!mounted || _statusRequest != request) return;
       final vehicle = status['vehicle_id'];
       if (vehicle is! String) {
-        throw const WifiRequestException('invalid_response');
+        throw const GatewayRequestException('invalid_response');
       }
       setState(() {
         _status = status;
@@ -150,7 +150,7 @@ class _WifiPageState extends State<WifiPage> {
           _pendingOperation = null;
         }
       });
-    } on WifiRequestException catch (error) {
+    } on GatewayRequestException catch (error) {
       if (mounted && _statusRequest == request) {
         setState(() {
           _status = null;
@@ -171,7 +171,7 @@ class _WifiPageState extends State<WifiPage> {
     });
     try {
       await action(generation);
-    } on WifiRequestException catch (error) {
+    } on GatewayRequestException catch (error) {
       if (mounted && generation == _generation) {
         setState(() => _error = error.code);
       }
@@ -265,7 +265,7 @@ class _WifiPageState extends State<WifiPage> {
         if (mounted && generation == _generation) {
           final operation = result['operation_id'];
           if (operation is! String) {
-            throw const WifiRequestException('invalid_response');
+            throw const GatewayRequestException('invalid_response');
           }
           setState(() {
             _pendingOperation = operation;

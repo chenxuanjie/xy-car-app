@@ -12,8 +12,8 @@ import 'transport.dart';
 
 enum Link { disconnected, connecting, connected }
 
-final class WifiRequestException implements Exception {
-  const WifiRequestException(this.code);
+final class GatewayRequestException implements Exception {
+  const GatewayRequestException(this.code);
 
   final String code;
 }
@@ -127,8 +127,9 @@ class Store extends ChangeNotifier {
   bool _requireFirstProbe = false;
   Stopwatch? _activeProbe;
   int _probeSequence = 0;
-  int _wifiSequence = 0;
-  final _wifiRequests = <String, Completer<Map<String, dynamic>>>{};
+  int _requestSequence = 0;
+  int _videoLeaseSequence = 0;
+  final _requests = <String, Completer<Map<String, dynamic>>>{};
   int? _rttMs;
   int _cmdSeq = 0;
   bool _disposed = false;
@@ -319,42 +320,48 @@ class Store extends ChangeNotifier {
     _connectionDeadline?.cancel();
     _activeProbe = null;
     _rttMs = null;
-    for (final request in _wifiRequests.values) {
-      request.completeError(const WifiRequestException('not_connected'));
+    for (final request in _requests.values) {
+      request.completeError(const GatewayRequestException('not_connected'));
     }
-    _wifiRequests.clear();
+    _requests.clear();
   }
 
   Future<Map<String, dynamic>> requestWifi(
     String command, [
     Map<String, Object?> payload = const {},
-  ]) async {
+  ]) => _request('wifi.request', {'cmd': command, 'payload': payload});
+
+  String newVideoLease() => 'video-${++_videoLeaseSequence}';
+
+  Future<Map<String, dynamic>> requestVideo(String lease, {String? profile}) =>
+      _request(profile == null ? 'video.stop' : 'video.start', {
+        'payload': {'lease': lease, 'profile': ?profile},
+      });
+
+  Future<Map<String, dynamic>> _request(
+    String type,
+    Map<String, Object?> fields,
+  ) async {
     final transport = _t;
     if (transport == null || link != Link.connected || isDemo) {
-      throw const WifiRequestException('not_connected');
+      throw const GatewayRequestException('not_connected');
     }
-    final id = 'wifi-${++_wifiSequence}';
+    final id = '$type-${++_requestSequence}';
     final request = Completer<Map<String, dynamic>>();
-    _wifiRequests[id] = request;
+    _requests[id] = request;
     try {
       transport.send(
-        jsonEncode({
-          'v': _protocolVersion,
-          'type': 'wifi.request',
-          'cmd': command,
-          'id': id,
-          'payload': payload,
-        }),
+        jsonEncode({'v': _protocolVersion, 'type': type, 'id': id, ...fields}),
       );
       txCount++;
       return await request.future.timeout(
         const Duration(seconds: 4),
-        onTimeout: () => throw const WifiRequestException('request_timeout'),
+        onTimeout: () => throw const GatewayRequestException('request_timeout'),
       );
     } on StateError {
-      throw const WifiRequestException('not_connected');
+      throw const GatewayRequestException('not_connected');
     } finally {
-      _wifiRequests.remove(id);
+      _requests.remove(id);
     }
   }
 
@@ -492,13 +499,14 @@ class Store extends ChangeNotifier {
       _acceptPong(e);
       return;
     }
-    if (e.type == 'wifi.result' && e.version == _protocolVersion) {
-      final request = _wifiRequests.remove(e.id);
+    if ((e.type == 'wifi.result' || e.type == 'video.status') &&
+        e.version == _protocolVersion) {
+      final request = _requests.remove(e.id);
       if (e.ok == true) {
         request?.complete(e.payload);
       } else {
         request?.completeError(
-          WifiRequestException(e.error ?? 'invalid_response'),
+          GatewayRequestException(e.error ?? 'invalid_response'),
         );
       }
       return;

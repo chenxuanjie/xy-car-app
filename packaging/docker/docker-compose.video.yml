@@ -1,0 +1,24 @@
+# Apply together with the current Web Compose in the same project.
+services:
+  video-relay:
+    image: bluenviron/mediamtx:1.21.4
+    platform: linux/amd64
+    restart: unless-stopped
+    ports:
+      - "8890:8890/udp"
+      - "8189:8189/udp"
+      - "8189:8189/tcp"
+    environment:
+      MTX_RTSP: "no"
+      MTX_RTMP: "no"
+      MTX_HLS: "no"
+      MTX_MOQ: "no"
+      MTX_SRT: "yes"
+      MTX_SRTMINLATENCY: 80ms
+      MTX_WEBRTC: "yes"
+      MTX_WEBRTCLOCALUDPADDRESS: :8189
+      MTX_WEBRTCLOCALTCPADDRESS: :8189
+      MTX_WEBRTCIPSFROMINTERFACES: "no"
+      MTX_WEBRTCADDITIONALHOSTS: ${XY_CAR_VIDEO_PUBLIC_HOST:-cznas.pp.ua}
+      MTX_PATHDEFAULTS_OVERRIDEPUBLISHER: "no"
+      MTX_PATHDEFAULTS_SRTPUBLISHPASSPHRASE: ${XY_CAR_SRT_PASSPHRASE:?Set the board-to-NAS SRT passphrase}

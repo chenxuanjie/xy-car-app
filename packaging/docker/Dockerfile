@@ -6,7 +6,9 @@ RUN python /prepare_web_layers.py /web /layers /default.conf.template
 
 FROM nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
 ENV APP_SERVICE_UPSTREAM=http://192.168.1.55:18280
-ENV NGINX_ENVSUBST_FILTER="^APP_SERVICE_UPSTREAM$"
+ENV VEHICLE_WS_UPSTREAM=http://192.168.1.55:10090
+ENV VIDEO_WHEP_UPSTREAM=http://video-relay:8889
+ENV NGINX_ENVSUBST_FILTER="^(APP_SERVICE_UPSTREAM|VEHICLE_WS_UPSTREAM|VIDEO_WHEP_UPSTREAM)$"
 COPY --link --from=web-layers /layers/nginx/ /
 COPY --link --from=web-layers /layers/engine/ /
 COPY --link --from=web-layers /layers/fonts/ /
