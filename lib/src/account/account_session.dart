@@ -47,6 +47,8 @@ final class AccountSession {
   String? _requestUser;
   bool _disposed = false;
 
+  Uri get origin => _session.client.origin;
+
   String get _signedOutKey =>
       'xy_car_app.signed_out.${_session.client.origin.origin}';
 
@@ -133,13 +135,15 @@ final class AccountSession {
   Future<Map<String, dynamic>> request(
     String path, {
     Map<String, dynamic>? body,
+    String? expectedUser,
   }) async {
     if (_authorized == null || _authorized!.needsLogin) await restore();
     final authorized = _authorized;
     if (authorized == null || authorized.needsLogin) {
       throw const AppClientFailure('请先登录账号', status: 401);
     }
-    if (_requestUser != null && _requestUser != authorized.userId) {
+    if ((expectedUser != null && expectedUser != authorized.userId) ||
+        (_requestUser != null && _requestUser != authorized.userId)) {
       throw const AppClientFailure('账号状态已变化，请重新登录', status: 401);
     }
     _requestUser = authorized.userId;

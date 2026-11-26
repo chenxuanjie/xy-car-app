@@ -155,7 +155,8 @@ class _LogsState extends State<_Logs> {
 
 typedef _VehicleSelection = ({
   VehicleConnection vehicle,
-  VehicleConnection? previous,
+  String? previousId,
+  bool save,
 });
 
 String _preferenceLabel(VehiclePreference preference, _Translate tr) =>
@@ -187,21 +188,38 @@ class _DeviceSettingsState extends State<_DeviceSettings> {
   final _name = TextEditingController();
   VehiclePreference _preference = VehiclePreference.auto;
   VehicleConnection? _editing;
+  String? _editingId;
   bool _showingForm = false;
   String? _notice;
+  Timer? _syncTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(widget.connections.refresh());
+    _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!_showingForm) unawaited(widget.connections.refresh());
+    });
+  }
 
   @override
   void dispose() {
+    _syncTimer?.cancel();
     _lan.dispose();
     _remote.dispose();
     _name.dispose();
     super.dispose();
   }
 
-  void _select(VehicleConnection vehicle, {VehicleConnection? previous}) {
+  void _select(
+    VehicleConnection vehicle, {
+    String? previousId,
+    bool save = false,
+  }) {
     Navigator.pop<_VehicleSelection>(context, (
       vehicle: vehicle,
-      previous: previous,
+      previousId: previousId,
+      save: save,
     ));
   }
 
@@ -233,13 +251,14 @@ class _DeviceSettingsState extends State<_DeviceSettings> {
       });
       return;
     }
-    _select(vehicle, previous: _editing);
+    _select(vehicle, previousId: _editingId, save: true);
   }
 
   void _showForm([VehicleConnection? vehicle]) {
     setState(() {
       _showingForm = true;
       _editing = vehicle;
+      _editingId = vehicle == null ? null : widget.connections.idOf(vehicle);
       _lan.text = vehicle?.lan?.toString() ?? '';
       _remote.text = vehicle?.remote?.toString() ?? '';
       _name.text = vehicle?.name ?? '';
@@ -283,10 +302,9 @@ class _DeviceSettingsState extends State<_DeviceSettings> {
     ),
     validator: (value) {
       final address = value?.trim() ?? '';
-      if (address.isEmpty ||
-          vehicleEndpoint(address, defaultPort: defaultPort) != null) {
-        return null;
-      }
+      if (address.isEmpty) return null;
+      final endpoint = vehicleEndpoint(address, defaultPort: defaultPort);
+      if (endpoint != null && endpoint.toString().length <= 512) return null;
       return widget.tr('地址或端口无效', 'Invalid address or port');
     },
     onFieldSubmitted: (_) => _connect(),
@@ -300,6 +318,18 @@ class _DeviceSettingsState extends State<_DeviceSettings> {
         Row(
           children: [
             Expanded(child: Text(tr('已保存车辆', 'Saved vehicles'))),
+            ListenableBuilder(
+              listenable: widget.connections,
+              builder: (context, _) => widget.connections.accountActive
+                  ? IconButton(
+                      tooltip: tr('同步车辆', 'Sync vehicles'),
+                      onPressed: widget.connections.syncing
+                          ? null
+                          : () => unawaited(widget.connections.refresh()),
+                      icon: const Icon(Icons.sync, size: 20),
+                    )
+                  : const SizedBox.shrink(),
+            ),
             TextButton.icon(
               onPressed: _showForm,
               icon: const _StationIcon(_StationGlyph.plus, size: 16),
@@ -312,18 +342,23 @@ class _DeviceSettingsState extends State<_DeviceSettings> {
           listenable: widget.connections,
           builder: (context, _) {
             final vehicles = widget.connections.vehicles;
+            final status = widget.connections.syncFailed
+                ? tr('车辆同步失败，可稍后重试', 'Vehicle sync failed. You can retry.')
+                : widget.connections.syncing
+                ? tr('正在同步车辆…', 'Syncing vehicles…')
+                : null;
             if (vehicles.isEmpty) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 18),
                 child: Text(
-                  tr('暂无车辆记录', 'No saved vehicles'),
+                  status ?? tr('暂无车辆记录', 'No saved vehicles'),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               );
             }
-            return SizedBox(
+            final list = SizedBox(
               height: 60.0 * vehicles.length.clamp(1, 4),
               child: ListView.builder(
                 padding: EdgeInsets.zero,
@@ -373,6 +408,12 @@ class _DeviceSettingsState extends State<_DeviceSettings> {
                 },
               ),
             );
+            return status == null
+                ? list
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [Text(status), list],
+                  );
           },
         ),
       ],

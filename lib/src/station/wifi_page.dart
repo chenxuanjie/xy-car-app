@@ -306,7 +306,7 @@ class _WifiPageState extends State<WifiPage> {
       setState(() => _error = 'invalid_endpoint');
       return;
     }
-    unawaited(widget.link.connect(target: endpoint));
+    unawaited(widget.link.connect(target: endpoint, save: false));
   }
 
   String? _ssidError(String? value, bool required) {

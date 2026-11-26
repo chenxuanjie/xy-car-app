@@ -169,7 +169,7 @@ class Store extends ChangeNotifier {
     return null;
   }
 
-  Future<void> connect({Uri? target}) async {
+  Future<void> connect({Uri? target, bool save = true}) async {
     if (_disposed) return;
     if (target == null) {
       if (link != Link.connecting) await _startConnection();
@@ -177,7 +177,7 @@ class Store extends ChangeNotifier {
     }
     final vehicle =
         vehicleConnections?.forEndpoint(target) ?? singleVehicle(target);
-    _rememberVehicle(vehicle);
+    if (save) _rememberVehicle(vehicle);
     final route = vehicle.lan == target
         ? VehicleRoute.lan
         : VehicleRoute.remote;
@@ -188,21 +188,19 @@ class Store extends ChangeNotifier {
 
   Future<void> connectVehicle(
     VehicleConnection vehicle, {
-    VehicleConnection? previous,
+    String? previousId,
+    bool save = true,
   }) async {
     final routes = vehicle.routes;
     if (_disposed || routes.isEmpty) return;
-    _rememberVehicle(vehicle, previous: previous);
+    if (save) _rememberVehicle(vehicle, previousId: previousId);
     _routes = routes;
     _requireFirstProbe = true;
     await _startConnection();
   }
 
-  void _rememberVehicle(
-    VehicleConnection vehicle, {
-    VehicleConnection? previous,
-  }) {
-    final save = vehicleConnections?.remember(vehicle, previous: previous);
+  void _rememberVehicle(VehicleConnection vehicle, {String? previousId}) {
+    final save = vehicleConnections?.remember(vehicle, previousId: previousId);
     if (save != null) {
       unawaited(
         save.catchError((Object _) {

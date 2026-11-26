@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:app_client/app_client.dart' show AppClientFailure;
 import 'package:app_core/app_core.dart';
@@ -188,6 +189,7 @@ class _StationState extends State<_Station> {
   bool _accountMission = false;
   bool get _english => Localizations.localeOf(context).languageCode == 'en';
   String? _verifiedAccount;
+  AppLifecycleListener? _lifecycleListener;
   int _accountGeneration = 0;
   bool _showLogs = false;
   bool _developerLogs = false;
@@ -202,6 +204,9 @@ class _StationState extends State<_Station> {
   void initState() {
     super.initState();
     _modules.identity.addListener(_observeAccount);
+    _lifecycleListener = AppLifecycleListener(
+      onResume: () => unawaited(_vehicleConnections.refresh()),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_modules.identity.initialize());
@@ -235,12 +240,23 @@ class _StationState extends State<_Station> {
     final next = identity.isVerified ? identity.user?.id : null;
     if (_verifiedAccount == next) return;
     _verifiedAccount = next;
+    if (next == null) {
+      _vehicleConnections.selectAccount(null);
+    } else {
+      final session = _modules.gateway.session;
+      _vehicleConnections.selectAccount(
+        jsonEncode([session.origin.origin, next]),
+        request: (path, {body}) =>
+            session.request(path, body: body, expectedUser: next),
+      );
+    }
     _accountChanged();
   }
 
   @override
   void dispose() {
     _modules.identity.removeListener(_observeAccount);
+    _lifecycleListener?.dispose();
     _vehicleLink.dispose();
     super.dispose();
   }
@@ -459,7 +475,8 @@ class _StationState extends State<_Station> {
       unawaited(
         _vehicleLink.connectVehicle(
           selection.vehicle,
-          previous: selection.previous,
+          previousId: selection.previousId,
+          save: selection.save,
         ),
       );
     }
