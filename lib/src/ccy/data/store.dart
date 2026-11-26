@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-import '../../station/vehicle_connections.dart';
+import '../../station/vehicle_discovery.dart';
 
 import 'envelope.dart';
 import 'models.dart';
@@ -48,12 +48,8 @@ class PendingCmd {
 /// 单一数据源：所有 UI 只读它，所有命令从它发出。
 /// 前端绝不推断状态，只渲染后端给的值。
 class Store extends ChangeNotifier {
-  Store({
-    this.vehicleConnections,
-    this.onVehicleSaveError,
-    required Transport Function() newTransport,
-    this.isDemo = false,
-  }) : _newTransport = newTransport;
+  Store({required Transport Function() newTransport, this.isDemo = false})
+    : _newTransport = newTransport;
 
   static const _demoEndpoint = 'ws://127.0.0.1:9090/ws';
   static const _probeInterval = Duration(seconds: 1);
@@ -62,8 +58,6 @@ class Store extends ChangeNotifier {
   static const _connectionTimeout = Duration(seconds: 5);
   static const _protocolVersion = 1;
 
-  final VehicleConnections? vehicleConnections;
-  final VoidCallback? onVehicleSaveError;
   final Transport Function() _newTransport;
   final bool isDemo;
 
@@ -71,6 +65,7 @@ class Store extends ChangeNotifier {
   VehicleRouteTarget? get activeTarget =>
       link == Link.connected && !isDemo ? _routes[_routeIndex] : null;
   VehicleRoute? get activeRoute => activeTarget?.route;
+  String? get connectedVehicleId => link == Link.connected ? _vehicleId : null;
   String? linkError;
   bool dataStale = true;
 
@@ -121,10 +116,10 @@ class Store extends ChangeNotifier {
   Timer? _probeDeadline;
   Timer? _connectionDeadline;
   late List<VehicleRouteTarget> _routes = [
-    (route: VehicleRoute.lan, endpoint: Uri.parse(_demoEndpoint)),
+    if (isDemo) (route: VehicleRoute.lan, endpoint: Uri.parse(_demoEndpoint)),
   ];
   int _routeIndex = 0;
-  bool _requireFirstProbe = false;
+  String? _vehicleId;
   Stopwatch? _activeProbe;
   int _probeSequence = 0;
   int _requestSequence = 0;
@@ -170,45 +165,17 @@ class Store extends ChangeNotifier {
     return null;
   }
 
-  Future<void> connect({Uri? target, bool save = true}) async {
-    if (_disposed) return;
-    if (target == null) {
-      if (link != Link.connecting) await _startConnection();
-      return;
+  Future<void> connect() async {
+    if (!_disposed && _routes.isNotEmpty && link != Link.connecting) {
+      await _startConnection();
     }
-    final vehicle =
-        vehicleConnections?.forEndpoint(target) ?? singleVehicle(target);
-    if (save) _rememberVehicle(vehicle);
-    final route = vehicle.lan == target
-        ? VehicleRoute.lan
-        : VehicleRoute.remote;
-    _routes = [(route: route, endpoint: target)];
-    _requireFirstProbe = false;
-    await _startConnection();
   }
 
-  Future<void> connectVehicle(
-    VehicleConnection vehicle, {
-    String? previousId,
-    bool save = true,
-  }) async {
-    final routes = vehicle.routes;
-    if (_disposed || routes.isEmpty) return;
-    if (save) _rememberVehicle(vehicle, previousId: previousId);
-    _routes = routes;
-    _requireFirstProbe = true;
+  Future<void> connectVehicle(VehicleSelection selection) async {
+    if (_disposed || selection.routes.isEmpty) return;
+    _routes = selection.routes;
+    _vehicleId = selection.vehicleId;
     await _startConnection();
-  }
-
-  void _rememberVehicle(VehicleConnection vehicle, {String? previousId}) {
-    final save = vehicleConnections?.remember(vehicle, previousId: previousId);
-    if (save != null) {
-      unawaited(
-        save.catchError((Object _) {
-          if (!_disposed) onVehicleSaveError?.call();
-        }),
-      );
-    }
   }
 
   Future<void> _startConnection() {
@@ -250,11 +217,10 @@ class Store extends ChangeNotifier {
           _onClosed(t);
         },
       );
-      if (!isDemo) _sendProbe(t);
-      if (identical(_t, t) &&
-          link != Link.connected &&
-          (!_requireFirstProbe || isDemo)) {
+      if (isDemo) {
         _markConnected(t);
+      } else {
+        _sendProbe(t);
       }
     } catch (e) {
       if (!identical(_t, t)) return;
@@ -396,6 +362,15 @@ class Store extends ChangeNotifier {
         envelope.id != _probeId) {
       return;
     }
+    final vehicleId = envelope.vehicleId;
+    if (vehicleId == null ||
+        vehicleId.isEmpty ||
+        (_vehicleId != null && vehicleId != _vehicleId)) {
+      linkError = '网关车辆 ID 不匹配';
+      _onClosed(_t!);
+      return;
+    }
+    _vehicleId = vehicleId;
     probe.stop();
     if (probe.elapsed >= _probeTimeout) {
       _probeTimedOut(_t!);
@@ -499,6 +474,7 @@ class Store extends ChangeNotifier {
       _acceptPong(e);
       return;
     }
+    if (!isDemo && link != Link.connected) return;
     if ((e.type == 'wifi.result' || e.type == 'video.status') &&
         e.version == _protocolVersion) {
       final request = _requests.remove(e.id);

@@ -7,6 +7,7 @@ import 'package:app_settings/app_settings.dart';
 import 'package:app_update/app_update.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -15,7 +16,7 @@ import 'account/identity_gateway.dart';
 import 'network/local_station_service.dart';
 import 'network/service_config.dart';
 import 'station/station_data.dart';
-import 'station/vehicle_connections.dart';
+import 'station/vehicle_discovery.dart';
 import 'station/wifi_profiles.dart';
 import 'updates/station_updates.dart';
 import 'video/video_profile.dart';
@@ -26,8 +27,18 @@ const videoResolutionPreference = 'station.videoResolution';
 const videoFrameRatePreference = 'station.videoFrameRate';
 const accountRoute = '/settings/account';
 const updateRoute = '/settings/update';
-bool get isOfflineWifiOrigin =>
-    kIsWeb && Uri.base.host == '192.168.88.1' && Uri.base.port == 8888;
+bool get isBoardWeb =>
+    kIsWeb &&
+    Uri.base.port == vehicleBoardWebPort &&
+    (Uri.base.host == vehicleHotspotHost ||
+        const bool.fromEnvironment('XY_CAR_BOARD_WEB'));
+
+Uri get boardWebSocket => Uri(
+  scheme: Uri.base.scheme == 'https' ? 'wss' : 'ws',
+  host: Uri.base.host,
+  port: Uri.base.port,
+  path: '/ws',
+);
 
 String localized(BuildContext context, String zh, String en) =>
     Localizations.localeOf(context).languageCode == 'en' ? en : zh;
@@ -43,6 +54,7 @@ final class StationModules {
     this.lifecycle,
     this._preferences,
     this._updateSource,
+    this.vehicleDirectory,
   );
 
   final SettingsModule settings;
@@ -53,7 +65,7 @@ final class StationModules {
   final UpdateModule updates;
   final ModuleLifecycle lifecycle;
   final SharedPreferences _preferences;
-  late final vehicleConnections = VehicleConnections(_preferences);
+  final VehicleDirectory vehicleDirectory;
   late final wifiProfiles = WifiProfiles(_preferences);
   final StationUpdates? _updateSource;
   Future<void>? _closing;
@@ -61,6 +73,7 @@ final class StationModules {
   static Future<StationModules> start({
     SharedPreferences? preferences,
     PackageInfo? package,
+    http.Client? vehicleDiscoveryClient,
   }) async {
     final storage = preferences ?? await SharedPreferences.getInstance();
     final installed = package ?? await PackageInfo.fromPlatform();
@@ -106,7 +119,7 @@ final class StationModules {
       ],
     );
     final gateway = StationIdentityGateway(
-      useLiveAccountService && !isOfflineWifiOrigin
+      useLiveAccountService && !isBoardWeb
           ? AccountSession.connect(
               AppJsonClient.parseOrigin(
                 kIsWeb
@@ -117,7 +130,7 @@ final class StationModules {
             )
           : LocalStationService(
               storage,
-              offline: isOfflineWifiOrigin,
+              offline: isBoardWeb,
             ).connect(browser: kIsWeb),
     );
     final identity = IdentityController(
@@ -174,6 +187,10 @@ final class StationModules {
         lifecycle,
         storage,
         source,
+        VehicleDirectory(
+          kIsWeb ? Uri.parse(Uri.base.origin) : Uri.parse(xyCarVehicleOrigin),
+          client: vehicleDiscoveryClient,
+        ),
       );
     } catch (_) {
       identity.dispose();
@@ -215,7 +232,7 @@ final class StationModules {
   Future<void> _close() async {
     identity.dispose();
     data.reset();
-    await vehicleConnections.close();
+    vehicleDirectory.close();
     try {
       await lifecycle.dispose();
     } finally {

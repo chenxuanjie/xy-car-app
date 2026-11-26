@@ -10,6 +10,7 @@ class Envelope {
     this.version,
     this.cmd,
     this.id,
+    this.vehicleId,
     this.ok,
     this.error,
   });
@@ -22,6 +23,7 @@ class Envelope {
   final Map<String, dynamic> payload;
   final String? cmd;
   final String? id;
+  final String? vehicleId;
   final bool? ok;
   final String? error;
 
@@ -40,6 +42,7 @@ class Envelope {
         payload: (decoded['payload'] as Map<String, dynamic>?) ?? const {},
         cmd: decoded['cmd'] as String?,
         id: decoded['id'] as String?,
+        vehicleId: decoded['vehicle_id'] as String?,
         ok: decoded['ok'] as bool?,
         error: decoded['error'] as String?,
       );

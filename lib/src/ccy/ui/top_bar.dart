@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../station/vehicle_connections.dart';
+import '../../station/vehicle_discovery.dart';
 import '../data/store.dart';
 import '../theme/tokens.dart';
 import 'kit.dart';
@@ -209,6 +209,7 @@ class _TopBarState extends State<TopBar> {
     final route = switch (widget.store.activeRoute) {
       VehicleRoute.lan => 'LAN',
       VehicleRoute.remote => 'WAN',
+      VehicleRoute.hotspot => 'AP',
       null => 'LINK',
     };
     final text = rttMs == null ? 'LINK —' : '$route $rttMs ms';

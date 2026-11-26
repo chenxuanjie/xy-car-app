@@ -15,3 +15,8 @@ const useLiveAccountService = bool.fromEnvironment(
   defaultValue: kReleaseMode,
 );
 const xyCarReleaseOrigin = String.fromEnvironment('XY_CAR_RELEASE_ORIGIN');
+
+const xyCarVehicleOrigin = String.fromEnvironment(
+  'XY_CAR_VEHICLE_ORIGIN',
+  defaultValue: 'https://cznas.pp.ua:8090',
+);

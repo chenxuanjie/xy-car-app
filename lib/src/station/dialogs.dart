@@ -153,28 +153,27 @@ class _LogsState extends State<_Logs> {
   }
 }
 
-typedef _VehicleSelection = ({
-  VehicleConnection vehicle,
-  String? previousId,
-  bool save,
-});
-
-String _preferenceLabel(VehiclePreference preference, _Translate tr) =>
-    switch (preference) {
-      VehiclePreference.auto => tr('自动', 'Auto'),
-      VehiclePreference.lanOnly => tr('仅局域网', 'LAN only'),
-      VehiclePreference.remoteOnly => tr('仅外网', 'Remote only'),
-    };
+VehicleSelection get _boardVehicle => (
+  vehicleId: null,
+  routes: [
+    (
+      route: Uri.base.host == vehicleHotspotHost
+          ? VehicleRoute.hotspot
+          : VehicleRoute.lan,
+      endpoint: boardWebSocket,
+    ),
+  ],
+);
 
 class _DeviceSettings extends StatefulWidget {
   const _DeviceSettings({
     required this.tr,
-    required this.connections,
+    required this.directory,
     required this.link,
   });
 
   final _Translate tr;
-  final VehicleConnections connections;
+  final VehicleDirectory directory;
   final Store link;
 
   @override
@@ -182,362 +181,203 @@ class _DeviceSettings extends StatefulWidget {
 }
 
 class _DeviceSettingsState extends State<_DeviceSettings> {
-  final _form = GlobalKey<FormState>();
-  final _lan = TextEditingController();
-  final _remote = TextEditingController();
-  final _name = TextEditingController();
-  VehiclePreference _preference = VehiclePreference.auto;
-  VehicleConnection? _editing;
-  String? _editingId;
-  bool _showingForm = false;
-  String? _notice;
-  Timer? _syncTimer;
+  static const _refreshInterval = Duration(seconds: 5);
+  Timer? _poller;
+  List<DiscoveredVehicle>? _vehicles;
+  bool _loading = false;
+  bool _failed = false;
+  bool _hotspotLaunchFailed = false;
 
   @override
   void initState() {
     super.initState();
-    unawaited(widget.connections.refresh());
-    _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (!_showingForm) unawaited(widget.connections.refresh());
-    });
+    if (isBoardWeb) return;
+    unawaited(_refresh());
+    _poller = Timer.periodic(_refreshInterval, (_) => unawaited(_refresh()));
   }
 
   @override
   void dispose() {
-    _syncTimer?.cancel();
-    _lan.dispose();
-    _remote.dispose();
-    _name.dispose();
+    _poller?.cancel();
     super.dispose();
   }
 
-  void _select(
-    VehicleConnection vehicle, {
-    String? previousId,
-    bool save = false,
-  }) {
-    Navigator.pop<_VehicleSelection>(context, (
-      vehicle: vehicle,
-      previousId: previousId,
-      save: save,
-    ));
-  }
-
-  void _connect() {
-    if (!_form.currentState!.validate()) return;
-    final vehicle = (
-      lan: vehicleEndpoint(_lan.text),
-      remote: vehicleEndpoint(
-        _remote.text,
-        defaultPort: defaultRemoteVehiclePort,
-      ),
-      name: _name.text.trim(),
-      preference: _preference,
-    );
-    if (vehicle.routes.isEmpty) {
-      final tr = widget.tr;
-      setState(() {
-        _notice = switch (_preference) {
-          VehiclePreference.auto => tr(
-            '请至少填写一个地址',
-            'Enter at least one address',
-          ),
-          VehiclePreference.lanOnly => tr('请填写局域网地址', 'Enter a LAN address'),
-          VehiclePreference.remoteOnly => tr(
-            '请填写外网地址',
-            'Enter a remote address',
-          ),
-        };
-      });
-      return;
-    }
-    _select(vehicle, previousId: _editingId, save: true);
-  }
-
-  void _showForm([VehicleConnection? vehicle]) {
-    setState(() {
-      _showingForm = true;
-      _editing = vehicle;
-      _editingId = vehicle == null ? null : widget.connections.idOf(vehicle);
-      _lan.text = vehicle?.lan?.toString() ?? '';
-      _remote.text = vehicle?.remote?.toString() ?? '';
-      _name.text = vehicle?.name ?? '';
-      _preference = vehicle?.preference ?? VehiclePreference.auto;
-      _notice = null;
-    });
-  }
-
-  void _backToList() {
-    setState(() {
-      _showingForm = false;
-      _notice = null;
-    });
-  }
-
-  Future<void> _remove(VehicleConnection vehicle) async {
+  Future<void> _refresh() async {
+    if (_loading) return;
+    setState(() => _loading = true);
     try {
-      await widget.connections.remove(vehicle);
+      final vehicles = await widget.directory.load();
+      if (!mounted) return;
+      setState(() {
+        _vehicles = vehicles;
+        _loading = false;
+        _failed = false;
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _notice = widget.tr('删除车辆记录失败', 'Could not delete the vehicle');
+        _loading = false;
+        _failed = true;
       });
     }
   }
 
-  Widget _addressField({
-    required Key key,
-    required TextEditingController controller,
-    required String title,
-    required String hint,
-    required int defaultPort,
-  }) => TextFormField(
-    key: key,
-    controller: controller,
-    keyboardType: TextInputType.url,
-    decoration: InputDecoration(
-      labelText: title,
-      hintText: hint,
-      border: const OutlineInputBorder(),
-    ),
-    validator: (value) {
-      final address = value?.trim() ?? '';
-      if (address.isEmpty) return null;
-      final endpoint = vehicleEndpoint(address, defaultPort: defaultPort);
-      if (endpoint != null && endpoint.toString().length <= 512) return null;
-      return widget.tr('地址或端口无效', 'Invalid address or port');
-    },
-    onFieldSubmitted: (_) => _connect(),
-  );
+  void _select(VehicleSelection selection) => Navigator.pop(context, selection);
 
-  Widget _vehicleList() {
-    final tr = widget.tr;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(child: Text(tr('已保存车辆', 'Saved vehicles'))),
-            ListenableBuilder(
-              listenable: widget.connections,
-              builder: (context, _) => widget.connections.accountActive
-                  ? IconButton(
-                      tooltip: tr('同步车辆', 'Sync vehicles'),
-                      onPressed: widget.connections.syncing
-                          ? null
-                          : () => unawaited(widget.connections.refresh()),
-                      icon: const Icon(Icons.sync, size: 20),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-            TextButton.icon(
-              onPressed: _showForm,
-              icon: const _StationIcon(_StationGlyph.plus, size: 16),
-              label: Text(tr('添加车辆', 'Add vehicle')),
-            ),
-          ],
-        ),
-        const Divider(height: 12, color: _line),
-        ListenableBuilder(
-          listenable: widget.connections,
-          builder: (context, _) {
-            final vehicles = widget.connections.vehicles;
-            final status = widget.connections.syncFailed
-                ? tr('车辆同步失败，可稍后重试', 'Vehicle sync failed. You can retry.')
-                : widget.connections.syncing
-                ? tr('正在同步车辆…', 'Syncing vehicles…')
-                : null;
-            if (vehicles.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                child: Text(
-                  status ?? tr('暂无车辆记录', 'No saved vehicles'),
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              );
-            }
-            final list = SizedBox(
-              height: 60.0 * vehicles.length.clamp(1, 4),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                itemCount: vehicles.length,
-                itemBuilder: (context, index) {
-                  final vehicle = vehicles[index];
-                  return ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const _StationIcon(_StationGlyph.server),
-                    title: Text(
-                      vehicle.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      '${_preferenceLabel(vehicle.preference, tr)} · '
-                      '${vehicle.routes.first.endpoint.authority}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    onTap: () => _select(vehicle),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: tr('编辑车辆', 'Edit vehicle'),
-                          onPressed: () => _showForm(vehicle),
-                          icon: const _StationIcon(
-                            _StationGlyph.settings,
-                            color: _muted,
-                            size: 18,
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: tr('删除车辆记录', 'Delete saved vehicle'),
-                          onPressed: () => _remove(vehicle),
-                          icon: const _StationIcon(
-                            _StationGlyph.trash2,
-                            color: _muted,
-                            size: 18,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            );
-            return status == null
-                ? list
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [Text(status), list],
-                  );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _vehicleForm() {
-    final tr = widget.tr;
-    return Form(
-      key: _form,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextFormField(
-            key: const ValueKey('vehicle.name'),
-            controller: _name,
-            maxLength: 80,
-            decoration: InputDecoration(
-              labelText: tr('车辆名称（选填）', 'Vehicle name (optional)'),
-              counterText: '',
-              border: const OutlineInputBorder(),
-            ),
-            onFieldSubmitted: (_) => _connect(),
-          ),
-          const SizedBox(height: 12),
-          _addressField(
-            key: const ValueKey('vehicle.lan'),
-            controller: _lan,
-            title: tr('局域网地址', 'LAN address'),
-            hint: '192.168.21.30:9090',
-            defaultPort: defaultVehiclePort,
-          ),
-          const SizedBox(height: 12),
-          _addressField(
-            key: const ValueKey('vehicle.remote'),
-            controller: _remote,
-            title: tr('外网地址（FRP）', 'Remote address (FRP)'),
-            hint: 'wss://example.com/ws',
-            defaultPort: defaultRemoteVehiclePort,
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<VehiclePreference>(
-            key: ValueKey(('vehicle.preference', _preference)),
-            initialValue: _preference,
-            decoration: InputDecoration(
-              labelText: tr('连接偏好', 'Connection preference'),
-              border: const OutlineInputBorder(),
-            ),
-            items: [
-              for (final preference in VehiclePreference.values)
-                DropdownMenuItem(
-                  value: preference,
-                  child: Text(_preferenceLabel(preference, tr)),
-                ),
-            ],
-            onChanged: (preference) {
-              if (preference == null) return;
-              setState(() {
-                _preference = preference;
-                _notice = null;
-              });
-            },
+  Future<void> _openHotspot() async {
+    if (!kIsWeb) {
+      _select((
+        vehicleId: null,
+        routes: [
+          (
+            route: VehicleRoute.hotspot,
+            endpoint: vehicleSocket(vehicleHotspotHost),
           ),
         ],
+      ));
+      return;
+    }
+    final page = Uri(
+      scheme: 'http',
+      host: vehicleHotspotHost,
+      port: vehicleBoardWebPort,
+      path: '/',
+    );
+    if (!await launchUrl(page, webOnlyWindowName: '_blank') && mounted) {
+      setState(() => _hotspotLaunchFailed = true);
+    }
+  }
+
+  Widget _vehicleTile(DiscoveredVehicle vehicle, String? connectedId) {
+    final tr = widget.tr;
+    final localizations = MaterialLocalizations.of(context);
+    final day = localizations.formatShortDate(vehicle.lastSeen);
+    final time = localizations.formatTimeOfDay(
+      TimeOfDay.fromDateTime(vehicle.lastSeen),
+    );
+    final available = vehicle.online || vehicle.lanIp != null;
+    final status = _failed
+        ? (vehicle.online
+              ? tr('上次在线', 'Last reported online')
+              : tr('上次离线', 'Last reported offline'))
+        : (vehicle.online
+              ? tr('云端在线', 'Cloud online')
+              : tr('云端离线', 'Cloud offline'));
+    return ListTile(
+      key: ValueKey(vehicle.id),
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        connectedId == vehicle.id ? Icons.link : Icons.directions_car_outlined,
       ),
+      title: Text(vehicle.id, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        [
+          status,
+          if (vehicle.networkMode case final mode?)
+            mode.toUpperCase().replaceAll('_', ' + '),
+          ?vehicle.lanIp,
+          '${tr('最后活跃', 'Last seen')} $day $time',
+        ].join(' · '),
+      ),
+      selected: connectedId == vehicle.id,
+      enabled: available,
+      onTap: available ? () => _select(widget.directory.select(vehicle)) : null,
+      trailing: vehicle.online
+          ? IconButton(
+              tooltip: tr('仅通过外网连接', 'Connect through cloud only'),
+              onPressed: () =>
+                  _select(widget.directory.select(vehicle, remoteOnly: true)),
+              icon: const Icon(Icons.cloud_outlined),
+            )
+          : null,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final tr = widget.tr;
-    final title = !_showingForm
-        ? tr('车辆连接', 'Vehicle link')
-        : _editing == null
-        ? tr('添加车辆', 'Add vehicle')
-        : tr('编辑车辆', 'Edit vehicle');
+    final vehicles = _vehicles;
     return AlertDialog(
+      title: Text(tr('车辆连接', 'Vehicle link')),
       scrollable: true,
-      title: Text(title),
       content: SizedBox(
         width: 430,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_showingForm) _vehicleForm() else _vehicleList(),
-            if (_notice case final notice?)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(notice),
-              ),
-          ],
+        child: ListenableBuilder(
+          listenable: widget.link,
+          builder: (context, _) {
+            final connectedId = widget.link.connectedVehicleId;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (connectedId != null)
+                  Text('${tr('当前车辆', 'Connected vehicle')} · $connectedId'),
+                if (isBoardWeb)
+                  OutlinedButton(
+                    onPressed: widget.link.link == Link.disconnected
+                        ? () => _select(_boardVehicle)
+                        : null,
+                    child: Text(tr('连接本车', 'Connect to this vehicle')),
+                  )
+                else ...[
+                  if (vehicles == null && _loading)
+                    const LinearProgressIndicator(),
+                  if (_failed)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            tr('无法获取云端车辆列表', 'Cloud vehicle list unavailable'),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _loading ? null : _refresh,
+                          child: Text(tr('重试', 'Retry')),
+                        ),
+                      ],
+                    )
+                  else if (vehicles?.isEmpty == true)
+                    Text(tr('暂无车辆报到', 'No vehicles have checked in')),
+                  if (vehicles != null)
+                    for (final vehicle in vehicles)
+                      _vehicleTile(vehicle, connectedId),
+                  const Divider(),
+                  TextButton.icon(
+                    onPressed: _openHotspot,
+                    icon: const Icon(Icons.wifi_tethering),
+                    label: Text(
+                      kIsWeb
+                          ? tr('打开车载热点页面', 'Open vehicle hotspot page')
+                          : tr('连接车端热点', 'Connect to vehicle hotspot'),
+                    ),
+                  ),
+                  if (_hotspotLaunchFailed)
+                    const SelectableText('http://192.168.88.1:8089/'),
+                ],
+              ],
+            );
+          },
         ),
       ),
       actions: [
-        if (_showingForm) ...[
-          TextButton(
-            onPressed: _backToList,
-            child: Text(tr('返回列表', 'Back to vehicles')),
-          ),
-          FilledButton(
-            onPressed: _connect,
-            child: Text(tr('保存并连接', 'Save and connect')),
-          ),
-        ] else ...[
-          ListenableBuilder(
-            listenable: widget.link,
-            builder: (context, _) => switch (widget.link.link) {
-              Link.disconnected => const SizedBox.shrink(),
-              final link => OutlinedButton(
-                onPressed: widget.link.disconnect,
-                child: Text(
-                  link == Link.connected
-                      ? tr('断开连接', 'Disconnect')
-                      : tr('取消连接', 'Cancel connection'),
-                ),
+        ListenableBuilder(
+          listenable: widget.link,
+          builder: (context, _) => switch (widget.link.link) {
+            Link.disconnected => const SizedBox.shrink(),
+            final link => OutlinedButton(
+              onPressed: widget.link.disconnect,
+              child: Text(
+                link == Link.connected
+                    ? tr('断开连接', 'Disconnect')
+                    : tr('取消连接', 'Cancel connection'),
               ),
-            },
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(tr('关闭', 'Close')),
-          ),
-        ],
+            ),
+          },
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(tr('关闭', 'Close')),
+        ),
       ],
     );
   }

@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xy_car_app/main.dart';
@@ -15,7 +17,7 @@ import 'package:xy_car_app/src/ccy/data/store.dart';
 import 'package:xy_car_app/src/ccy/data/transport.dart';
 import 'package:xy_car_app/src/ccy/data/web_socket_transport.dart';
 import 'package:xy_car_app/src/ccy/ui/module_card.dart';
-import 'package:xy_car_app/src/station/vehicle_connections.dart';
+import 'package:xy_car_app/src/station/vehicle_discovery.dart';
 
 void main() {
   testWidgets('video settings save resolution and frame rate independently', (
@@ -100,163 +102,73 @@ void main() {
         ]),
       );
       await tap(tester, find.text('设备连接'));
-      expect(find.text('暂无车辆记录'), findsOneWidget);
+      expect(find.text('暂无车辆报到'), findsOneWidget);
       expect(find.text('从账号读取'), findsNothing);
       expect(find.text('保存到账号'), findsNothing);
       await tap(tester, find.text('关闭'));
     },
   );
 
-  testWidgets('failed connections stay in the local vehicle picker', (
+  testWidgets('discovery updates the network and online status from polling', (
     tester,
   ) async {
-    final failed = _ProbeTransport(openError: StateError('No route to host'));
-    final reachable = _ProbeTransport();
-    final external = _ProbeTransport();
-    var transport = failed;
-    final modules = await start(
-      tester,
-      const Size(1024, 760),
-      newVehicleTransport: () => transport,
-    );
-    await openVehicleDialog(tester);
-    await tap(tester, find.text('添加车辆'));
-    await tester.enterText(
-      find.byKey(const ValueKey('vehicle.lan')),
-      '192.168.1.44',
-    );
-    await tester.enterText(find.byKey(const ValueKey('vehicle.name')), '台架车');
-    await tap(tester, find.text('保存并连接'));
+    var vehicles = [
+      _listedVehicle(),
+      _listedVehicle(id: 'other', online: false),
+    ];
+    await start(tester, const Size(1024, 760), listedVehicles: () => vehicles);
 
-    final endpoint = Uri.parse('ws://192.168.1.44:9090/ws');
-    expect(failed.endpoint, endpoint);
-    expect(find.text('连接失败'), findsOneWidget);
-    expect(modules.identity.isVerified, isFalse);
-    final preferences = await tester.runAsync(SharedPreferences.getInstance);
-    final reopened = VehicleConnections(preferences!);
-    expect(reopened.vehicles.single, (
-      lan: endpoint,
-      remote: null,
-      name: '台架车',
-      preference: VehiclePreference.auto,
-    ));
-    reopened.dispose();
-
-    transport = reachable;
     await openVehicleDialog(tester);
-    await tap(tester, find.text('台架车'));
-    expect(reachable.endpoint, endpoint);
-    expect(modules.vehicleConnections.vehicles, hasLength(1));
-    reachable.reply();
+    expect(find.text('car'), findsOneWidget);
+    expect(find.text('other'), findsOneWidget);
+    expect(find.textContaining('云端在线'), findsOneWidget);
+    expect(find.textContaining('云端离线'), findsOneWidget);
+    expect(find.textContaining('192.168.1.20'), findsNWidgets(2));
+
+    vehicles = [_listedVehicle(online: false, lanIp: '192.168.1.41')];
+    await tester.pump(const Duration(seconds: 5));
     await tester.pump();
-    await disconnectVehicle(tester);
-
-    transport = external;
-    await openVehicleDialog(tester);
-    await tap(tester, find.byTooltip('编辑车辆'));
-    final remoteField = find.byKey(const ValueKey('vehicle.remote'));
-    await tester.ensureVisible(remoteField);
-    await tester.enterText(remoteField, 'wss://gateway.example.test/ws');
-    await tap(tester, find.text('自动'));
-    await tap(tester, find.text('仅外网').last);
-    await tap(tester, find.text('保存并连接'));
-    final externalEndpoint = Uri.parse('wss://gateway.example.test/ws');
-    expect(external.endpoint, externalEndpoint);
-    expect(modules.vehicleConnections.vehicles.single, (
-      lan: endpoint,
-      remote: externalEndpoint,
-      name: '台架车',
-      preference: VehiclePreference.remoteOnly,
-    ));
-    external.reply();
-    await tester.pumpAndSettle();
-    expect(find.textContaining('外网 · '), findsOneWidget);
-    await disconnectVehicle(tester);
-
-    await openVehicleDialog(tester);
-    await tap(tester, find.byTooltip('删除车辆记录'));
-    expect(find.text('暂无车辆记录'), findsOneWidget);
-    expect(modules.vehicleConnections.vehicles, isEmpty);
+    expect(find.textContaining('云端离线'), findsOneWidget);
+    expect(find.textContaining('192.168.1.41'), findsOneWidget);
+    expect(find.text('other'), findsNothing);
     await tap(tester, find.text('关闭'));
   });
 
-  testWidgets('add vehicle opens a blank form in the existing dialog', (
-    tester,
-  ) async {
-    final transports = [_ProbeTransport(), _ProbeTransport()];
-    final modules = await start(
-      tester,
-      const Size(1024, 760),
-      newVehicleTransport: () => transports.removeAt(0),
-    );
-    expect(find.byType(TextField), findsNothing);
-    await openVehicleDialog(tester);
-    expect(find.byType(TextFormField), findsNothing);
-    await tap(tester, find.text('添加车辆'));
-
-    final lan = find.byKey(const ValueKey('vehicle.lan'));
-    final remote = find.byKey(const ValueKey('vehicle.remote'));
-    final name = find.byKey(const ValueKey('vehicle.name'));
-    await tester.enterText(lan, '192.168.1.11');
-    await tester.enterText(name, '一号车');
-    await tap(tester, find.text('保存并连接'));
-    await openVehicleDialog(tester);
-    expect(find.text('一号车'), findsOneWidget);
-
-    final dialog = tester.element(find.byType(AlertDialog));
-    await tap(tester, find.text('添加车辆'));
-    expect(tester.element(find.byType(AlertDialog)), same(dialog));
-    expect(tester.widget<TextFormField>(lan).controller!.text, isEmpty);
-    expect(tester.widget<TextFormField>(remote).controller!.text, isEmpty);
-    expect(tester.widget<TextFormField>(name).controller!.text, isEmpty);
-    await tester.enterText(remote, 'wss://second-car.example.test/ws');
-    await tester.enterText(name, '二号车');
-    await tap(tester, find.text('保存并连接'));
-    await openVehicleDialog(tester);
-    expect(find.text('一号车'), findsOneWidget);
-    expect(find.text('二号车'), findsOneWidget);
-    expect(modules.vehicleConnections.vehicles, hasLength(2));
-  });
-
   testWidgets(
-    'auto route requires pong, then falls back and retries LAN on loss',
+    'a wrong-car LAN pong falls through to the selected cloud route',
     (tester) async {
       final lan = Uri.parse('ws://192.168.1.20:9090/ws');
-      final remote = Uri.parse('wss://gateway.example.test/ws');
-      final silentLan = _ProbeTransport();
+      final remote = Uri.parse(
+        'wss://gateway.example.test/api/v1/client/ws?vehicle_id=car',
+      );
+      final wrongLan = _ProbeTransport();
       final reachableRemote = _ProbeTransport();
       final restoredLan = _ProbeTransport();
-      final transports = [silentLan, reachableRemote, restoredLan];
+      final transports = [wrongLan, reachableRemote, restoredLan];
       final store = Store(newTransport: () => transports.removeAt(0));
       await store.connectVehicle((
-        lan: lan,
-        remote: remote,
-        name: '台架车',
-        preference: VehiclePreference.auto,
+        vehicleId: 'car',
+        routes: [
+          (route: VehicleRoute.lan, endpoint: lan),
+          (route: VehicleRoute.remote, endpoint: remote),
+        ],
       ));
-      expect(silentLan.endpoint, lan);
-      expect(store.link, Link.connecting);
-      await tester.pump(const Duration(milliseconds: 1499));
-      expect(reachableRemote.openCount, 0);
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(silentLan.closeCount, 1);
+      expect(wrongLan.endpoint, lan);
+      wrongLan.reply(vehicleId: 'other');
+      await tester.pump();
+      expect(wrongLan.closeCount, 1);
       expect(reachableRemote.endpoint, remote);
-      expect(store.activeRoute, isNull);
+      expect(store.rttMs, isNull);
 
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(store.txCount, 2);
       reachableRemote.reply();
       await tester.pump();
       expect(store.activeRoute, VehicleRoute.remote);
-      await tester.pump(const Duration(seconds: 2));
-      expect(restoredLan.openCount, 0);
-      expect(store.activeRoute, VehicleRoute.remote);
+      expect(store.connectedVehicleId, 'car');
 
       reachableRemote.drop();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1500));
       expect(restoredLan.endpoint, lan);
-      await tester.pump();
       restoredLan.reply();
       await tester.pump();
       expect(store.activeRoute, VehicleRoute.lan);
@@ -264,39 +176,35 @@ void main() {
     },
   );
 
-  testWidgets(
-    'single-route preferences and cancellation never try the other route',
-    (tester) async {
-      final lan = Uri.parse('ws://192.168.1.20:9090/ws');
-      final remote = Uri.parse('wss://gateway.example.test/ws');
-      final cancelled = _ProbeTransport();
-      final remoteOnly = _ProbeTransport();
-      final transports = [cancelled, remoteOnly];
-      final store = Store(newTransport: () => transports.removeAt(0));
-      await store.connectVehicle((
-        lan: lan,
-        remote: remote,
-        name: '台架车',
-        preference: VehiclePreference.lanOnly,
-      ));
-      expect(cancelled.endpoint, lan);
-      store.disconnect();
-      await tester.pump(const Duration(seconds: 6));
-      expect(remoteOnly.openCount, 0);
-
-      await store.connectVehicle((
-        lan: lan,
-        remote: remote,
-        name: '台架车',
-        preference: VehiclePreference.remoteOnly,
-      ));
-      expect(remoteOnly.endpoint, remote);
-      remoteOnly.reply();
-      await tester.pump();
-      expect(store.activeRoute, VehicleRoute.remote);
-      store.dispose();
-    },
-  );
+  testWidgets('switching cars cancels the previous LAN deadline', (
+    tester,
+  ) async {
+    final first = _ProbeTransport();
+    final second = _ProbeTransport();
+    final transports = [first, second];
+    final store = Store(newTransport: () => transports.removeAt(0));
+    final directory = VehicleDirectory(
+      Uri.parse('https://gateway.example.test'),
+    );
+    await store.connectVehicle(
+      directory.select(DiscoveredVehicle.fromJson(_listedVehicle())),
+    );
+    await tester.pump(const Duration(milliseconds: 1499));
+    await store.connectVehicle(
+      directory.select(
+        DiscoveredVehicle.fromJson(_listedVehicle(id: 'other')),
+        remoteOnly: true,
+      ),
+    );
+    second.reply(vehicleId: 'other');
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(first.closeCount, 1);
+    expect(store.connectedVehicleId, 'other');
+    expect(store.activeRoute, VehicleRoute.remote);
+    expect(store.rttMs, isNotNull);
+    store.dispose();
+    directory.close();
+  });
 
   testWidgets('waypoints can be added and cleared locally', (tester) async {
     await start(tester, const Size(1280, 720));
@@ -321,62 +229,56 @@ void main() {
     expect(find.text('暂无日志'), findsOneWidget);
   });
 
-  testWidgets(
-    'classic desktop probes the configured device and can disconnect',
-    (tester) async {
-      final transport = _ProbeTransport();
-      await start(
-        tester,
-        const Size(1024, 760),
-        newVehicleTransport: () => transport,
-      );
-      await openVehicleDialog(tester);
-      await tap(tester, find.text('添加车辆'));
-      await tester.enterText(
-        find.byKey(const ValueKey('vehicle.lan')),
-        '192.168.1.20:9091',
-      );
-      await tap(tester, find.text('保存并连接'));
-      expect(transport.endpoint, Uri.parse('ws://192.168.1.20:9091/ws'));
-      expect(find.text('连接中'), findsOneWidget);
-
-      transport.reply();
-      await tester.pump();
-      expect(
-        find.textContaining(RegExp(r'^(局域网|外网) · \d+ ms$')),
-        findsOneWidget,
-      );
-
-      await disconnectVehicle(tester);
-      expect(transport.closeCount, 1);
-      expect(find.text('离线'), findsOneWidget);
-      expect(find.textContaining(RegExp(r'^(局域网|外网) · \d+ ms$')), findsNothing);
-    },
-  );
-
-  testWidgets('classic mobile connects using the full secure gateway URL', (
+  testWidgets('desktop connects and disconnects a discovered vehicle', (
     tester,
   ) async {
     final transport = _ProbeTransport();
     await start(
       tester,
-      const Size(390, 844),
+      const Size(1024, 760),
       newVehicleTransport: () => transport,
+      listedVehicles: () => [_listedVehicle()],
     );
     await openVehicleDialog(tester);
-    await tap(tester, find.text('添加车辆'));
-    await tester.enterText(
-      find.byKey(const ValueKey('vehicle.remote')),
-      'wss://gateway.example.test/vehicle/ws',
-    );
-    await tap(tester, find.text('保存并连接'));
-    expect(
-      transport.endpoint,
-      Uri.parse('wss://gateway.example.test/vehicle/ws'),
-    );
+    await tap(tester, find.text('car'));
+    expect(transport.endpoint, Uri.parse('ws://192.168.1.20:9090/ws'));
+    expect(find.text('连接中'), findsOneWidget);
+
     transport.reply();
     await tester.pump();
-    expect(find.textContaining(RegExp(r'^(局域网|外网) · \d+ ms$')), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^局域网 · \d+ ms$')), findsOneWidget);
+
+    await disconnectVehicle(tester);
+    expect(transport.closeCount, 1);
+    expect(find.textContaining(RegExp(r'^局域网 · \d+ ms$')), findsNothing);
+  });
+
+  testWidgets('mobile falls back to the cloud on a failed LAN connection', (
+    tester,
+  ) async {
+    final local = _ProbeTransport(
+      openError: StateError('Local access blocked'),
+    );
+    final remote = _ProbeTransport();
+    final transports = [local, remote];
+    final modules = await start(
+      tester,
+      const Size(390, 844),
+      newVehicleTransport: () => transports.removeAt(0),
+      listedVehicles: () => [_listedVehicle()],
+    );
+    await openVehicleDialog(tester);
+    await tap(tester, find.text('car'));
+    expect(local.endpoint, Uri.parse('ws://192.168.1.20:9090/ws'));
+    expect(remote.endpoint, modules.vehicleDirectory.remoteSocket('car'));
+    expect(remote.endpoint!.path, '/api/v1/client/ws');
+    expect(remote.endpoint!.queryParameters, {'vehicle_id': 'car'});
+    if (kIsWeb) expect(remote.endpoint!.authority, Uri.base.authority);
+    expect(modules.identity.isVerified, isFalse);
+
+    remote.reply();
+    await tester.pump();
+    expect(find.textContaining(RegExp(r'^外网 · \d+ ms$')), findsOneWidget);
   });
 
   testWidgets('Wi-Fi shows the vehicle snapshot for each connection', (
@@ -389,6 +291,7 @@ void main() {
       tester,
       const Size(1280, 720),
       newVehicleTransport: () => transport,
+      listedVehicles: () => [_listedVehicle()],
     );
     await tap(tester, find.byTooltip('系统设置'));
     await tap(tester, find.text('Wi-Fi'));
@@ -396,13 +299,15 @@ void main() {
     expect(find.text('STA · 未连接'), findsNothing);
     expect(find.textContaining('车辆配置模式'), findsNothing);
 
-    await tester.tap(find.text('连接车辆'));
+    await tap(tester, find.text('查找车辆'));
+    await tap(tester, find.text('car'));
+    first.reply();
     await tester.pump();
     expect(first.wifiRequests, 1);
     expect(find.text('正在读取 Wi-Fi 状态'), findsOneWidget);
 
     first.replyWifi(error: 'wifi_service_unavailable');
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.text('Wi-Fi 状态暂不可用'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 1));
@@ -419,14 +324,16 @@ void main() {
     expect(find.text('车辆配置模式 · STA + AP'), findsOneWidget);
     expect(find.text('STA · 已连接 · router · 192.168.1.20'), findsOneWidget);
     expect(find.text('AP · 未开启'), findsOneWidget);
-    expect(find.textContaining('App 当前连接 · 车端热点'), findsOneWidget);
+    expect(find.textContaining('App 当前连接 · 局域网'), findsOneWidget);
 
     transport = second;
     first.drop();
     await tester.pump();
     expect(find.text('车辆未连接'), findsOneWidget);
     expect(find.textContaining('车辆配置模式'), findsNothing);
-    await tester.tap(find.text('连接车辆'));
+    await tap(tester, find.text('查找车辆'));
+    await tap(tester, find.text('car'));
+    second.reply();
     await tester.pump();
     expect(second.wifiRequests, 1);
     expect(find.text('正在读取 Wi-Fi 状态'), findsOneWidget);
@@ -451,14 +358,15 @@ void main() {
       tester,
       const Size(1280, 720),
       newVehicleTransport: () => transport,
+      listedVehicles: () => [_listedVehicle()],
     );
     await tap(tester, find.byTooltip('系统设置'));
     await tap(tester, find.text('Wi-Fi'));
     const endpoint = 'ws://192.168.1.20:9090/ws';
-    await tester.enterText(find.byType(TextField).first, endpoint);
-    await tester.tap(find.text('连接车辆'));
-    await tester.pump();
+    await tap(tester, find.text('查找车辆'));
+    await tap(tester, find.text('car'));
     transport.reply();
+    await tester.pump();
     const sta = {'connected': true, 'ssid': 'router', 'ip': '192.168.1.20'};
     transport.replyWifi(
       status: {
@@ -624,15 +532,11 @@ void main() {
       tester,
       const Size(1440, 900),
       newVehicleTransport: () => transport,
+      listedVehicles: () => [_listedVehicle()],
     );
     expect(find.text('TELOPS'), findsNothing);
     await openVehicleDialog(tester);
-    await tap(tester, find.text('添加车辆'));
-    await tester.enterText(
-      find.byKey(const ValueKey('vehicle.lan')),
-      '192.168.1.20',
-    );
-    await tap(tester, find.text('保存并连接'));
+    await tap(tester, find.text('car'));
     expect(transport.endpoint, Uri.parse('ws://192.168.1.20:9090/ws'));
     transport.reply();
     await tester.pump();
@@ -646,7 +550,7 @@ void main() {
     expect(find.text('TELOPS'), findsOneWidget);
     expect(find.textContaining(RegExp(r'^LAN \d+ ms$')), findsOneWidget);
     await tap(tester, find.byTooltip('车辆连接'));
-    expect(find.text('添加车辆'), findsOneWidget);
+    expect(find.text('打开车载热点页面'), findsOneWidget);
     await tap(tester, find.text('关闭'));
 
     await tester.tap(find.text('监控'));
@@ -716,6 +620,7 @@ Future<StationModules> start(
   Size size, {
   Transport Function() newVehicleTransport = WebSocketTransport.new,
   Map<String, String> initialSettings = const {},
+  List<Map<String, Object?>> Function()? listedVehicles,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -726,6 +631,13 @@ Future<StationModules> start(
   FlutterSecureStorage.setMockInitialValues({});
   final modules = (await tester.runAsync(() async {
     final modules = await StationModules.start(
+      vehicleDiscoveryClient: MockClient((request) async {
+        expect(request.url.path, '/api/v1/vehicles');
+        return http.Response(
+          jsonEncode({'vehicles': listedVehicles?.call() ?? []}),
+          200,
+        );
+      }),
       package: PackageInfo(
         appName: 'XY-CAR',
         packageName: 'xy_car_app',
@@ -742,6 +654,18 @@ Future<StationModules> start(
   await tester.pumpAndSettle();
   return modules;
 }
+
+Map<String, Object?> _listedVehicle({
+  String id = 'car',
+  String? lanIp = '192.168.1.20',
+  bool online = true,
+}) => {
+  'vehicle_id': id,
+  'lan_ip': lanIp,
+  'status': online ? 'online' : 'offline',
+  'network_mode': 'sta_ap',
+  'last_seen': 1732180000,
+};
 
 Future<void> tap(WidgetTester tester, Finder finder) async {
   await tester.tap(finder);
@@ -799,8 +723,15 @@ class _ProbeTransport implements Transport {
     _probeId = probe['id'] as String;
   }
 
-  void reply() {
-    _frames.add(jsonEncode({'v': 1, 'type': 'pong', 'id': _probeId}));
+  void reply({String vehicleId = 'car'}) {
+    _frames.add(
+      jsonEncode({
+        'v': 1,
+        'type': 'pong',
+        'id': _probeId,
+        'vehicle_id': vehicleId,
+      }),
+    );
   }
 
   void replyWifi({

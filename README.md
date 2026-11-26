@@ -1,6 +1,6 @@
 # XY-CAR
 
-基于 `app-foundation` 的 Flutter 地面站，支持 Android、Windows 和 Web。设置、账号和更新页使用公共 UI。地面站支持离线航点编辑和本地车辆连接记录。登录后可保存和读取账号下的任务存档。
+基于 `app-foundation` 的 Flutter 地面站，支持 Android、Windows 和 Web。设置、账号和更新页使用公共 UI。地面站支持车辆自动发现和离线航点编辑。登录后可保存和读取账号下的任务存档。
 
 ## 本地开发
 
@@ -14,11 +14,11 @@ flutter test
 
 开发运行默认使用进程内的测试服务，账号和密码均为 `demo`。正式构建默认使用现有 `xy_car_app` 账号服务。可用 `--dart-define=XY_CAR_LIVE_ACCOUNT=true` 在开发时连接正式服务，或设为 `false` 在 Release 构建中使用测试服务。
 
-Web 窗口宽度达到 1280 逻辑像素时，可在「系统设置 → 宽屏主题」选择 CCY。点按顶栏 `LINK` 打开车辆连接弹窗。顶栏显示 WebSocket 往返延迟，尚未收到有效探测回包或断开时显示 `LINK —`。通过 HTTPS 托管时使用网关的 `wss://` 代理地址。
+Web 窗口宽度达到 1280 逻辑像素时，可在「系统设置 → 宽屏主题」选择 CCY。点按顶栏 `LINK` 打开车辆连接弹窗。顶栏显示 WebSocket 往返延迟，尚未收到有效探测回包或断开时显示 `LINK —`。
 
-经典主题从顶栏「车辆连接」或链路状态打开同一个弹窗。点按已保存车辆即可连接。点「添加车辆」或车辆行的编辑按钮，在弹窗中填写地址后选择「保存并连接」。同一账号在 Web、Android 和 Windows 共用车辆列表，新增、编辑和删除会自动同步。首次登录同步会合并此前保存的本地车辆。登录后的离线更改在设备上保存，连接恢复后会在下次打开车辆列表或点按「同步车辆」时重试。未登录时可继续使用本地车辆列表。两个主题共用车辆记录和实时连接。
+经典主题从顶栏「车辆连接」或链路状态打开同一个弹窗。打开后立即读取车辆发现列表，每 5 秒刷新。卡片显示车辆 ID、云端在线状态、网络模式、STA IP 和最后活跃时间。选择车辆会先尝试上报的局域网地址，1.5 秒内未收到同一车辆的 RTT 回包时改走云端。点击卡片的云朵按钮可直接走云端。
 
-每辆车可保存局域网和外网地址，并选择「自动」「仅局域网」或「仅外网」。自动模式在起连或断线后先试局域网，1.5 秒内没有收到首个有效 RTT 回包时再尝试外网。外网地址统一可填 `wss://cznas.pp.ua:8090/ws`，需先启用下方的 NAS 转发。原生端也可直连明文 FRP 地址 `ws://cznas.pp.ua:10090/ws`。状态区显示当前线路和 RTT。
+群晖 Web 用当前站点的同源 HTTP 和 WebSocket 地址。浏览器限制私网访问时会自动切云端。Android 和 Windows 默认访问 `https://cznas.pp.ua:8090`，可用 `XY_CAR_VEHICLE_ORIGIN` 指定其他车辆服务。连接车端 Wi-Fi 后，原生端可点「连接车端热点」，Web 可点「打开车载热点页面」。开发时用下方 Compose 验证 Web 的同源发现和转发。
 
 在「系统设置 → 地面站」可独立选择视频分辨率（480p、720p、1080p）和视频帧率（15、25、30 fps），默认 720p / 25 fps。经典和 CCY 界面共用这两项设置。局域网和车端热点从板端 MediaMTX 播放，外网从群晖中继播放。关闭视频或切到后台会释放公网推流。
 
@@ -26,7 +26,7 @@ Web 窗口宽度达到 1280 逻辑像素时，可在「系统设置 → 宽屏�
 
 系统设置中的 Wi-Fi 页面共用当前车辆连接。在页面中可读实际 STA 和热点状态，编辑个人预设，或下发配置并在车端应用后确认。个人预设按服务地址、账号和车辆保存在本机。Windows 和 Android 可以选择在系统安全存储中记住密码。Web 配网时按次输入密码。
 
-车端热点页面使用自带资源的 Web 构建。在本仓库执行 `flutter build web --release --no-wasm-dry-run --no-web-resources-cdn`，将 `build/web` 作为板端 Nginx 的静态根目录。手机接入车端热点后，从 `http://192.168.88.1:8888/` 进入 Wi-Fi 页面。
+车端页面使用自带资源的 Web 构建。在本仓库执行 `flutter build web --release --no-wasm-dry-run --no-web-resources-cdn --dart-define=XY_CAR_BOARD_WEB=true`，将 `build/web` 作为板端 Nginx 的静态根目录。从 `http://<板端局域网 IP>:8089/` 或车端热点 `http://192.168.88.1:8089/` 打开地面站，网页会自动连接板端同源 `/ws`。
 
 ## 正式环境
 
@@ -41,9 +41,9 @@ Web 窗口宽度达到 1280 逻辑像素时，可在「系统设置 → 宽屏�
 
 ## Web 的 NAS 部署
 
-在群晖现有 XY-CAR 项目中使用 [渠道 Compose](packaging/docker/docker-compose.ghcr.yml)。其镜像引用固定为 `ghcr.io/chenxuanjie/xy-car-app:nas`，每次重新应用项目会拉取该渠道并在镜像更新时重建 Web 容器。仅重启原容器会继续使用当前镜像。
+在群晖现有 XY-CAR 项目中使用 [渠道 Compose](packaging/docker/docker-compose.ghcr.yml)。`xy-car-web` 容器同时运行 Nginx 和单进程 FastAPI，两者通过容器内 Unix 套接字通信。每次重新应用项目会拉取渠道并在镜像更新时重建容器。仅重启原容器会继续使用当前镜像。
 
-在 DSM 的 `https://cznas.pp.ua:8090` → `http://127.0.0.1:8089` 反代规则中启用 WebSocket 自定义标头。Web 容器把同源 `/ws` 转到 `VEHICLE_WS_UPSTREAM`，默认是 NAS 内网 `http://192.168.1.55:10090`。该地址须能从容器访问，并由 `frps` 转发到板端 `9090`。更新容器后，用 `wss://cznas.pp.ua:8090/ws` 确认收到 HTTP `101` 和板端 `pong`。
+在 DSM 的 `https://cznas.pp.ua:8090` 到 `http://127.0.0.1:8089` 反代规则中启用 WebSocket 自定义标头。Web 容器转发同源的 `GET /api/v1/vehicles`、`/api/v1/agent/ws` 和 `/api/v1/client/ws?vehicle_id=...`。两辆车报到后，从浏览器分别连接并核对车辆 ID 和 RTT。断开网络后，从最后一次心跳起 15 秒内服务端标记离线，页面在下一次成功轮询时更新。服务重启后由车辆重新报到恢复列表。
 
 公网视频使用同一 Compose 项目里的 `video-relay` 服务：
 

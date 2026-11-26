@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:app_client/app_client.dart' show AppClientFailure;
 import 'package:app_core/app_core.dart';
@@ -11,6 +10,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_modules.dart';
 import 'src/ccy/ccy_preview.dart';
@@ -18,7 +18,7 @@ import 'src/ccy/data/store.dart';
 import 'src/ccy/data/transport.dart';
 import 'src/ccy/data/web_socket_transport.dart';
 import 'src/station/station_data.dart';
-import 'src/station/vehicle_connections.dart';
+import 'src/station/vehicle_discovery.dart';
 import 'src/station/wifi_page.dart';
 import 'src/video/video_panel.dart';
 import 'src/video/video_profile.dart';
@@ -172,24 +172,13 @@ class _Station extends StatefulWidget {
 class _StationState extends State<_Station> {
   StationModules get _modules => widget.modules;
   StationDataClient get _stationData => _modules.data;
-  VehicleConnections get _vehicleConnections => _modules.vehicleConnections;
-  late final _vehicleLink = Store(
-    newTransport: widget.newVehicleTransport,
-    vehicleConnections: _vehicleConnections,
-    onVehicleSaveError: () {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('保存车辆记录失败', 'Could not save the vehicle'))),
-      );
-    },
-  );
+  late final _vehicleLink = Store(newTransport: widget.newVehicleTransport);
   final _waypoints = <Offset>[];
   final _logs = <String>[];
   String _missionName = '';
   bool _accountMission = false;
   bool get _english => Localizations.localeOf(context).languageCode == 'en';
   String? _verifiedAccount;
-  AppLifecycleListener? _lifecycleListener;
   int _accountGeneration = 0;
   bool _showLogs = false;
   bool _developerLogs = false;
@@ -204,12 +193,12 @@ class _StationState extends State<_Station> {
   void initState() {
     super.initState();
     _modules.identity.addListener(_observeAccount);
-    _lifecycleListener = AppLifecycleListener(
-      onResume: () => unawaited(_vehicleConnections.refresh()),
-    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_modules.identity.initialize());
+      if (isBoardWeb) {
+        unawaited(_vehicleLink.connectVehicle(_boardVehicle));
+      }
       unawaited(_checkStartupUpdate());
     });
   }
@@ -240,23 +229,12 @@ class _StationState extends State<_Station> {
     final next = identity.isVerified ? identity.user?.id : null;
     if (_verifiedAccount == next) return;
     _verifiedAccount = next;
-    if (next == null) {
-      _vehicleConnections.selectAccount(null);
-    } else {
-      final session = _modules.gateway.session;
-      _vehicleConnections.selectAccount(
-        jsonEncode([session.origin.origin, next]),
-        request: (path, {body}) =>
-            session.request(path, body: body, expectedUser: next),
-      );
-    }
     _accountChanged();
   }
 
   @override
   void dispose() {
     _modules.identity.removeListener(_observeAccount);
-    _lifecycleListener?.dispose();
     _vehicleLink.dispose();
     super.dispose();
   }
@@ -384,7 +362,7 @@ class _StationState extends State<_Station> {
                     _modules.settings.preferenceEntry(wideWebThemePreference),
                 ],
               ),
-              if (!isOfflineWifiOrigin)
+              if (!isBoardWeb)
                 SettingsGroup(
                   title: (context) =>
                       localized(context, '账号与版本', 'Account and version'),
@@ -456,6 +434,7 @@ class _StationState extends State<_Station> {
             identity: _modules.identity,
             profiles: _modules.wifiProfiles,
             serviceScope: kIsWeb ? Uri.base.origin : _modules.accountOrigin,
+            onSelectVehicle: _deviceSettings,
           ),
         ),
       ),
@@ -463,22 +442,16 @@ class _StationState extends State<_Station> {
   }
 
   Future<void> _deviceSettings(BuildContext context) async {
-    final selection = await showDialog<_VehicleSelection>(
+    final selection = await showDialog<VehicleSelection>(
       context: context,
       builder: (context) => _DeviceSettings(
         tr: (zh, en) => localized(context, zh, en),
-        connections: _vehicleConnections,
+        directory: _modules.vehicleDirectory,
         link: _vehicleLink,
       ),
     );
     if (mounted && selection != null) {
-      unawaited(
-        _vehicleLink.connectVehicle(
-          selection.vehicle,
-          previousId: selection.previousId,
-          save: selection.save,
-        ),
-      );
+      unawaited(_vehicleLink.connectVehicle(selection));
     }
   }
 

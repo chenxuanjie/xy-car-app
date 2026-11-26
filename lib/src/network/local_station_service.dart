@@ -20,7 +20,6 @@ final class LocalStationService {
   static const _refresh = 'xy-car-local-refresh';
   static const _user = 'xy-car-preview';
   static const _missions = 'xy_car_app.preview.missions';
-  static const _vehicles = 'xy_car_app.preview.vehicles';
 
   AccountSession connect({required bool browser}) {
     final origin = Uri.https('xy-car-local.invalid');
@@ -81,24 +80,6 @@ final class LocalStationService {
     if (bearer?.startsWith('Bearer local.') != true ||
         (request.url.path.startsWith('/api/') && !active)) {
       return denied();
-    }
-    if (path == 'station/vehicles') {
-      final saved =
-          jsonDecode(
-                preferences.getString(_vehicles) ??
-                    '{"revision":0,"vehicles":[]}',
-              )
-              as Map<String, dynamic>;
-      if (request.method == 'GET') return reply(saved);
-      if (input['revision'] != saved['revision']) {
-        return reply({'detail': 'vehicle_revision_conflict'}, 409);
-      }
-      final updated = {
-        'revision': (saved['revision'] as int) + 1,
-        'vehicles': input['vehicles'],
-      };
-      await preferences.setString(_vehicles, jsonEncode(updated));
-      return reply(updated);
     }
     final missions =
         jsonDecode(preferences.getString(_missions) ?? '{}')

@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
-import '../app_modules.dart' show isOfflineWifiOrigin, localized;
+import '../app_modules.dart' show isBoardWeb, localized;
 import '../ccy/data/store.dart';
 import '../network/service_http_client.dart';
-import '../station/vehicle_connections.dart';
+import '../station/vehicle_discovery.dart';
 import 'video_profile.dart';
 
 class VehicleVideo extends StatefulWidget {
@@ -51,7 +51,7 @@ class _VehicleVideoState extends State<VehicleVideo> {
       final path = '/${widget.profile.path}/whep';
       final Uri? endpoint = remote
           ? null
-          : isOfflineWifiOrigin && target.endpoint.host == Uri.base.host
+          : isBoardWeb && target.endpoint.host == Uri.base.host
           ? Uri.base.resolve('/media$path')
           : Uri(
               scheme: 'http',

@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../app_modules.dart' show localized;
 import '../ccy/data/store.dart';
-import 'vehicle_connections.dart';
+import 'vehicle_discovery.dart';
 import 'wifi_profiles.dart';
 
 class WifiPage extends StatefulWidget {
@@ -16,19 +16,20 @@ class WifiPage extends StatefulWidget {
     required this.identity,
     required this.profiles,
     required this.serviceScope,
+    required this.onSelectVehicle,
   });
 
   final Store link;
   final IdentityController identity;
   final WifiProfiles profiles;
   final String serviceScope;
+  final Future<void> Function(BuildContext) onSelectVehicle;
 
   @override
   State<WifiPage> createState() => _WifiPageState();
 }
 
 class _WifiPageState extends State<WifiPage> {
-  static const _apHost = '192.168.88.1';
   static const _pollInterval = Duration(seconds: 1);
   final _form = GlobalKey<FormState>();
   final _hotspotForm = GlobalKey<FormState>();
@@ -36,7 +37,6 @@ class _WifiPageState extends State<WifiPage> {
   final _ap = TextEditingController();
   final _staPassword = TextEditingController();
   final _apPassword = TextEditingController();
-  final _endpoint = TextEditingController();
   String? _account;
   String? _vehicle;
   String? _pendingOperation;
@@ -57,14 +57,6 @@ class _WifiPageState extends State<WifiPage> {
   @override
   void initState() {
     super.initState();
-    _endpoint.text = Uri.base.host == _apHost
-        ? Uri(
-            scheme: 'ws',
-            host: _apHost,
-            port: Uri.base.port,
-            path: '/ws',
-          ).toString()
-        : 'ws://$_apHost:9090/ws';
     _account = widget.identity.isVerified ? widget.identity.user?.id : null;
     _linkState = widget.link.link;
     widget.identity.addListener(_accountChanged);
@@ -298,17 +290,6 @@ class _WifiPageState extends State<WifiPage> {
     );
   }
 
-  void _reconnect() {
-    final endpoint = Uri.tryParse(_endpoint.text.trim());
-    if (endpoint == null ||
-        !const {'ws', 'wss'}.contains(endpoint.scheme) ||
-        endpoint.host.isEmpty) {
-      setState(() => _error = 'invalid_endpoint');
-      return;
-    }
-    unawaited(widget.link.connect(target: endpoint, save: false));
-  }
-
   String? _ssidError(String? value, bool required) {
     if (value == null || value.isEmpty) {
       return required ? tr('请输入 SSID', 'Enter the SSID') : null;
@@ -371,13 +352,11 @@ class _WifiPageState extends State<WifiPage> {
     builder: (context, _) {
       final target = widget.link.activeTarget;
       if (target == null) return const SizedBox.shrink();
-      final host = target.endpoint.host;
-      final viaHotspot = host == _apHost || host == _network('ap')['ip'];
-      final route = viaHotspot
-          ? tr('车端热点', 'Vehicle hotspot')
-          : target.route == VehicleRoute.remote
-          ? tr('外网 FRP', 'Remote FRP')
-          : tr('局域网', 'LAN');
+      final route = switch (target.route) {
+        VehicleRoute.hotspot => tr('车端热点', 'Vehicle hotspot'),
+        VehicleRoute.remote => tr('云端中继', 'Cloud relay'),
+        VehicleRoute.lan => tr('局域网', 'LAN'),
+      };
       final rtt = widget.link.rttMs;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -422,13 +401,6 @@ class _WifiPageState extends State<WifiPage> {
     _ => tr('未知', 'Unknown'),
   };
 
-  String _frpcLabel(String state) => switch (state) {
-    'active' => tr('运行中', 'Running'),
-    'activating' => tr('启动或重试中', 'Starting or retrying'),
-    'inactive' || 'failed' => tr('未运行', 'Stopped'),
-    _ => tr('未知', 'Unknown'),
-  };
-
   String _errorLabel(String error) => switch (error) {
     'local_wifi_required' => tr(
       '请通过车辆局域网或热点应用配置',
@@ -460,10 +432,6 @@ class _WifiPageState extends State<WifiPage> {
     'profile_storage_failed' => tr(
       '个人配置存储失败',
       'Personal profile could not be stored',
-    ),
-    'invalid_endpoint' => tr(
-      '请输入完整的 WebSocket 地址',
-      'Enter a full WebSocket address',
     ),
     _ => error,
   };
@@ -547,7 +515,11 @@ class _WifiPageState extends State<WifiPage> {
     final waiting = const {'applying', 'confirm', 'finishing'}.contains(phase);
     final pending =
         _pendingOperation != null && _operation['id'] == _pendingOperation;
-    final canApply = !_busy && !waiting && _status != null;
+    final canApply =
+        !_busy &&
+        !waiting &&
+        _status != null &&
+        widget.link.activeRoute != VehicleRoute.remote;
     final hotspotRunning = _network('ap')['connected'] == true;
 
     return Scaffold(
@@ -578,30 +550,14 @@ class _WifiPageState extends State<WifiPage> {
                   Text('STA · ${_networkLabel('sta')}'),
                   Text('AP · ${_networkLabel('ap')}'),
                 ],
-                if (_status?['frpc_state'] case final String state)
-                  Text(
-                    tr(
-                      'FRP 服务 · ${_frpcLabel(state)}',
-                      'FRP service · ${_frpcLabel(state)}',
-                    ),
-                  ),
                 if (_linkState != Link.connected) ...[
-                  TextField(
-                    controller: _endpoint,
-                    decoration: InputDecoration(
-                      labelText: tr(
-                        '车辆 WebSocket 地址',
-                        'Vehicle WebSocket address',
-                      ),
-                    ),
-                  ),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton(
                       onPressed: _linkState == Link.connecting
                           ? null
-                          : _reconnect,
-                      child: Text(tr('连接车辆', 'Connect to vehicle')),
+                          : () => widget.onSelectVehicle(context),
+                      child: Text(tr('查找车辆', 'Find vehicles')),
                     ),
                   ),
                 ],
@@ -679,7 +635,6 @@ class _WifiPageState extends State<WifiPage> {
     _ap.dispose();
     _staPassword.dispose();
     _apPassword.dispose();
-    _endpoint.dispose();
     super.dispose();
   }
 }

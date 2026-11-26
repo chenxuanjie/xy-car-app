@@ -272,6 +272,7 @@ class _VehicleLinkStatus extends StatelessWidget {
         Link.connected => switch (store.activeRoute) {
           VehicleRoute.lan => '${tr('局域网', 'LAN')} · $rtt ms',
           VehicleRoute.remote => '${tr('外网', 'Remote')} · $rtt ms',
+          VehicleRoute.hotspot => '${tr('热点', 'Hotspot')} · $rtt ms',
           null => '$rtt ms',
         },
       };

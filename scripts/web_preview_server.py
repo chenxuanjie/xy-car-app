@@ -14,8 +14,7 @@ APP_PATH = "/v1/apps/xy_car_app"
 COOKIE = "__Host-app-session-xy_car_app"
 AUTH = re.compile(rf"/api{APP_PATH}/auth/browser/(bootstrap|login|restore|logout)")
 CONFIG_PATHS = {f"/api{APP_PATH}/client-config", "/api/v1/client-config"}
-VEHICLE_LIST = f"/api{APP_PATH}/station/vehicles"
-STATION_WRITES = {f"/api{APP_PATH}/station/{path}" for path in ("device", "mission", "vehicles")}
+STATION_WRITES = {f"/api{APP_PATH}/station/{path}" for path in ("device", "mission")}
 STATION_READS = STATION_WRITES | {f"/api{APP_PATH}/station/missions"}
 
 
@@ -118,8 +117,7 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             return self._reject(400, "invalid_body_length")
-        limit = 128 * 1024 if self.path == VEHICLE_LIST else 32 * 1024
-        if not 0 < length <= limit:
+        if not 0 < length <= 32 * 1024:
             return self._reject(413, "invalid_body_length")
         self.connection.settimeout(10)
         body = self.rfile.read(length)
