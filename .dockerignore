@@ -7,6 +7,3 @@
 !packaging/docker/Dockerfile
 !packaging/docker/default.conf.template
 !packaging/docker/prepare_web_layers.py
-!packaging/docker/vehicle_discovery.py
-!packaging/docker/vehicle-discovery-requirements.txt
-!packaging/docker/start_station.sh

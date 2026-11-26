@@ -117,12 +117,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$WEB_IMAGE")" = "$PLATFORM"
-          docker run --rm --pull never --platform "$PLATFORM" \
-            --entrypoint /opt/vehicle-discovery/bin/python -e PYTHONPATH=/srv \
-            -v "$PWD/test/test_vehicle_discovery.py:/test_vehicle_discovery.py:ro" \
-            "$WEB_IMAGE" /test_vehicle_discovery.py
           fixture="$RUNNER_TEMP/xy-car-api"
           mkdir -p "$fixture/v1/apps/xy_car_app"
+          printf '{"vehicles":[]}\n' > "$fixture/v1/vehicles"
           printf '{"app_id":"xy_car_app"}\n' > "$fixture/v1/apps/xy_car_app/client-config"
           python3 -m http.server 18080 --bind 127.0.0.1 --directory "$fixture" > "$RUNNER_TEMP/xy-car-api.log" 2>&1 &
           fixture_pid=$!
@@ -138,7 +135,8 @@ jobs:
           done
           docker exec "$container" nginx -t
           test "$(request "$base/healthz")" = ok
-          test "$(request "$base/api/v1/vehicles")" = '{"vehicles":[]}'
+          request "$base/api/v1/vehicles" > "$RUNNER_TEMP/xy-car-vehicles"
+          cmp "$fixture/v1/vehicles" "$RUNNER_TEMP/xy-car-vehicles"
           request "$base/" > "$RUNNER_TEMP/web-index.html"
           request "$base/settings/account" > "$RUNNER_TEMP/web-deep.html"
           cmp build/web/index.html "$RUNNER_TEMP/web-index.html"
@@ -160,7 +158,7 @@ jobs:
           request "$base/api/v1/apps/xy_car_app/client-config" > "$RUNNER_TEMP/xy-car-client-config"
           cmp "$fixture/v1/apps/xy_car_app/client-config" "$RUNNER_TEMP/xy-car-client-config"
           printf 'image_id=%s\n' "$(docker image inspect --format '{{.Id}}' "$WEB_IMAGE")" >> "$GITHUB_OUTPUT"
-          printf '{"passed":true,"checks":["platform","vehicle discovery and WebSocket relay","nginx config","healthz","SPA fallback","entry cache","content ETags","missing assets","scoped API proxy","Web artifact bytes","CCY asset bytes"]}\n' > "$RUNNER_TEMP/web-validation.json"
+          printf '{"passed":true,"checks":["platform","vehicle list API proxy","nginx config","healthz","SPA fallback","entry cache","content ETags","missing assets","scoped API proxy","Web artifact bytes","CCY asset bytes"]}\n' > "$RUNNER_TEMP/web-validation.json"
 
       - name: Log in to GHCR
         if: env.DELIVERY_MODE != 'build'

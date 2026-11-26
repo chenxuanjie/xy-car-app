@@ -99,6 +99,8 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             self._reject(502, "account_service_unavailable")
 
     def do_GET(self):
+        if self.path == "/api/v1/vehicles":
+            return self._proxy("/v1/vehicles")
         if self.path in CONFIG_PATHS:
             return self._proxy(f"{APP_PATH}/client-config")
         if self.path.partition("?")[0] in STATION_READS:

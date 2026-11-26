@@ -41,9 +41,9 @@ Web 窗口宽度达到 1280 逻辑像素时，可在「系统设置 → 宽屏�
 
 ## Web 的 NAS 部署
 
-在群晖现有 XY-CAR 项目中使用 [渠道 Compose](packaging/docker/docker-compose.ghcr.yml)。`xy-car-web` 容器同时运行 Nginx 和单进程 FastAPI，两者通过容器内 Unix 套接字通信。每次重新应用项目会拉取渠道并在镜像更新时重建容器。仅重启原容器会继续使用当前镜像。
+在群晖现有 XY-CAR 项目中使用 [渠道 Compose](packaging/docker/docker-compose.ghcr.yml)。`xy-car-web` 镜像提供 Flutter 页面和 Nginx 反代，车辆发现由现有 `app_data_service` 提供。先更新包含车辆发现模块的后端镜像，再更新 Web。每次重新应用项目会拉取渠道并在镜像更新时重建容器。
 
-在 DSM 的 `https://cznas.pp.ua:8090` 到 `http://127.0.0.1:8089` 反代规则中启用 WebSocket 自定义标头。Web 容器转发同源的 `GET /api/v1/vehicles`、`/api/v1/agent/ws` 和 `/api/v1/client/ws?vehicle_id=...`。两辆车报到后，从浏览器分别连接并核对车辆 ID 和 RTT。断开网络后，从最后一次心跳起 15 秒内服务端标记离线，页面在下一次成功轮询时更新。服务重启后由车辆重新报到恢复列表。
+在 DSM 的 `https://cznas.pp.ua:8090` 到 `http://127.0.0.1:8089` 反代规则中启用 WebSocket 自定义标头。Web 容器将同源的 `GET /api/v1/vehicles`、`/api/v1/agent/ws` 和 `/api/v1/client/ws?vehicle_id=...` 去掉 `/api` 前缀后转到 `APP_SERVICE_UPSTREAM`，与账号及任务接口使用同一个后端。后端使用单实例、单 worker，在线表随重启清空，车辆重新报到后恢复。两辆车报到后，从浏览器分别连接并核对车辆 ID 和 RTT。断开网络后，从最后一次心跳起 15 秒内服务端标记离线，页面在下一次成功轮询时更新。
 
 公网视频使用同一 Compose 项目里的 `video-relay` 服务：
 
